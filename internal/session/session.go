@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
 	"sync"
 	"time"
 
@@ -48,7 +49,7 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 	}
 	switch m.cfg.LocalTargetMode {
 	case "nsenter":
-		user := os.Getenv("TU_HOST_USER")
+		user := hostUser()
 		if user == "" {
 			user = "japa"
 		}
@@ -63,9 +64,17 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 			"-t", "1", "-m", "-u", "-i", "-n", "-p",
 			"su", user, "-c", inner,
 		}, nil
-	default: // host | container — same spawn; difference is where we run
-		args := []string{"-l"}
-		return shell, args, nil
+	case "host":
+		// Running natively on the host: TU_HOST_USER names the account
+		// sessions land as (e.g. the operator's dev user). The service
+		// user needs NOPASSWD sudo; sudo keeps our host-devpts ctty so
+		// job control stays native — no relay needed (ADR-006 option 1).
+		if u := hostUser(); u != "" && u != currentUser() {
+			return "sudo", []string{"-n", "-iu", u, "--", shell, "-l"}, nil
+		}
+		return shell, []string{"-l"}, nil
+	default: // container — plain spawn as the service user
+		return shell, []string{"-l"}, nil
 	}
 }
 
@@ -74,6 +83,18 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// hostUser is TU_HOST_USER — the account sessions should land as when the
+// service itself runs under a different system user (host/nsenter modes).
+func hostUser() string { return os.Getenv("TU_HOST_USER") }
+
+// currentUser resolves the service's own account for the sudo decision.
+func currentUser() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return os.Getenv("USER")
 }
 
 func shellQuote(s string) string {
@@ -113,10 +134,15 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 	if m.cfg.LocalTargetMode != "nsenter" {
 		// Unset cwd defaults to the service user's home, not the daemon's
 		// WorkingDirectory — shells should open where the user lives.
-		if rec.Cwd == "" {
-			rec.Cwd, _ = os.UserHomeDir()
+		// When sudo -iu crosses into another account it owns cwd+env
+		// itself; setting Dir to a foreign home would fail the spawn.
+		sudoing := m.cfg.LocalTargetMode == "host" && hostUser() != "" && hostUser() != currentUser()
+		if !sudoing {
+			if rec.Cwd == "" {
+				rec.Cwd, _ = os.UserHomeDir()
+			}
+			cmd.Dir = rec.Cwd
 		}
-		cmd.Dir = rec.Cwd
 	}
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
