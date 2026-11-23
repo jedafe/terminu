@@ -1,0 +1,4 @@
+[submodule ".teos"]
+	path = .teos
+	url = https://github.com/jedafe/terminu-engineering.git
+	branch = main
