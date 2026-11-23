@@ -1,0 +1,34 @@
+// Ref: .teos/sections/10, .teos/sections/12 — single-binary asset serving.
+// go:embed of the built SPA; SPA-fallback to index.html for client routes.
+package server
+
+import (
+	"embed"
+	"io/fs"
+	"net/http"
+	"path"
+	"strings"
+)
+
+//go:embed all:web
+var webFS embed.FS
+
+// staticHandler serves the embedded SvelteKit build with SPA fallback.
+func (s *Server) staticHandler() http.HandlerFunc {
+	sub, err := fs.Sub(webFS, "web")
+	if err != nil {
+		sub = webFS
+	}
+	fileServer := http.FileServer(http.FS(sub))
+	return func(w http.ResponseWriter, r *http.Request) {
+		p := path.Clean("/" + r.URL.Path)
+		if f, err := sub.Open(strings.TrimPrefix(p, "/")); err == nil {
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// SPA fallback — client-side routing owns unknown paths.
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	}
+}

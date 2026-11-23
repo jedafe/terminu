@@ -1,0 +1,11 @@
+/data/
+/terminu-server
+/apps/web/node_modules/
+/apps/web/build/
+/apps/web/.svelte-kit/
+/internal/server/web/
+!internal/server/web/index.html
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
