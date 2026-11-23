@@ -1,0 +1,6 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1700000000, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "agent starting...\r\n"]
+[0.120, "o", "Apply changes to config.yaml?\r\n"]
+[0.200, "o", "\u001b[1m[y/N]\u001b[0m "]
+[0.350, "i", "y"]
+[0.351, "o", "y\r\n"]
