@@ -212,10 +212,10 @@ func TestScrollbackBounded(t *testing.T) {
 
 func TestDefaultScope(t *testing.T) {
 	m := New(80, 24, 0)
-	// Cursor near top → above-cursor + bottom band as two ranges.
+	// Cursor near top → above-cursor (incl. cursor row) + bottom band.
 	feed(t, m, "\x1b[5;1H")
 	sc := m.DefaultScope(12)
-	if len(sc) != 2 || sc[0] != (ScanRange{0, 4}) || sc[1] != (ScanRange{12, 24}) {
+	if len(sc) != 2 || sc[0] != (ScanRange{0, 5}) || sc[1] != (ScanRange{12, 24}) {
 		t.Fatalf("scope = %+v", sc)
 	}
 	// Cursor inside bottom band → whole screen.

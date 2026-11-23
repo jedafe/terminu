@@ -30,10 +30,11 @@ type Adapter interface {
 }
 
 // SessionCtx carries what Detect may know about the session beyond the
-// screen — the bound foreground process and its argv.
+// screen — the bound foreground process and the configured scan scope.
 type SessionCtx struct {
-	SessionID string
-	FG        proc.Info
+	SessionID      string
+	FG             proc.Info
+	ScanBottomRows int // TU_SCAN_BOTTOM_ROWS — scope for DefaultScope()
 }
 
 // AdapterPin is a version fingerprint (UI: "patterns: devin-cli ≥1.x,

@@ -157,12 +157,13 @@ func (s *Screen) ScrollbackRowText(i int) string {
 }
 
 // DefaultScope returns §06's default scan scope: the above-cursor region
-// (rows 0..cursorY) plus the bottom bottomRows rows, merged when the
-// cursor sits inside the bottom band.
+// including the cursor's own line (rows 0..cursorY — line-mode prompts
+// sit on the input row) plus the bottom bottomRows rows, merged when
+// the cursor sits inside the bottom band.
 func (s *Screen) DefaultScope(bottomRows int) []ScanRange {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	y := s.t.Cursor().Y
+	y := s.t.Cursor().Y + 1 // include the cursor row
 	top := s.rows - bottomRows
 	if top < 0 {
 		top = 0
