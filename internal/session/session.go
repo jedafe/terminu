@@ -16,6 +16,7 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/jedafe/terminu/internal/domain"
+	"github.com/jedafe/terminu/internal/proc"
 )
 
 // Client is one attached consumer of PTY output. Slow clients drop on a
@@ -270,6 +271,12 @@ func (s *ptySession) Resize(cols, rows int) {
 
 // Rec exposes the session record (read-only) for control frames.
 func (s *ptySession) Rec() *domain.Session { return s.rec }
+
+// Foreground resolves the process owning this PTY's foreground group —
+// the adapter-binding routing key (spec §2). Read on gate ticks only.
+func (s *ptySession) Foreground() (proc.Info, error) {
+	return proc.Foreground(s.ptmx)
+}
 
 // ExitCode reports the process exit code once EOF has fired.
 func (s *ptySession) ExitCode() *int {

@@ -16,6 +16,7 @@ import (
 	"github.com/jedafe/terminu/internal/config"
 	"github.com/jedafe/terminu/internal/db/gen"
 	"github.com/jedafe/terminu/internal/domain"
+	"github.com/jedafe/terminu/internal/proc"
 )
 
 // Manager is the session registry — the only PTY spawn point, reached
@@ -112,6 +113,16 @@ func (m *Manager) Attach(id string) (*ptySession, error) {
 		return nil, ErrNotFound
 	}
 	return s, nil
+}
+
+// ForegroundProcess resolves a live session's foreground process —
+// task 2.02's binder output, consumed by the adapter slot on gate ticks.
+func (m *Manager) ForegroundProcess(id string) (proc.Info, error) {
+	s, err := m.Attach(id)
+	if err != nil {
+		return proc.Info{}, err
+	}
+	return s.Foreground()
 }
 
 func (m *Manager) List(ctx context.Context) ([]domain.Session, error) {
