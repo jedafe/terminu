@@ -58,9 +58,11 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		} else {
 			inner = "exec " + shellQuote(shell) + " -l"
 		}
+		// `su <user>` (no -): keeps our session/ctty so job control works;
+		// `bash -l` inside still sources the login environment.
 		return "nsenter", []string{
 			"-t", "1", "-m", "-u", "-i", "-n", "-p",
-			"su", "-", user, "-c", inner,
+			"su", user, "-c", inner,
 		}, nil
 	default: // host | container — same spawn; difference is where we run
 		args := []string{"-l"}
