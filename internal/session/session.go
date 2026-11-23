@@ -52,14 +52,13 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		if user == "" {
 			user = "japa"
 		}
-		inner := shell
-		if cwd != "" {
-			inner = "cd " + shellQuote(cwd) + " && exec " + shellQuote(shell) + " -l"
-		} else {
-			inner = "exec " + shellQuote(shell) + " -l"
-		}
-		// `su <user>` (no -): keeps our session/ctty so job control works;
-		// `bash -l` inside still sources the login environment.
+		// Our PTY lives on the container's devpts; after nsenter -m the
+		// session's /dev/tty resolves against the HOST devpts and job
+		// control breaks ("cannot set terminal process group"). `script`
+		// allocates a fresh pty inside the host namespaces and relays
+		// I/O — the inner shell gets a real ctty.
+		inner := "cd " + shellQuote(orDefault(cwd, "/home/"+user))
+		inner += " && exec script -qfc " + shellQuote("exec "+shell+" -l") + " /dev/null"
 		return "nsenter", []string{
 			"-t", "1", "-m", "-u", "-i", "-n", "-p",
 			"su", user, "-c", inner,
@@ -68,6 +67,13 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		args := []string{"-l"}
 		return shell, args, nil
 	}
+}
+
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
 
 func shellQuote(s string) string {
