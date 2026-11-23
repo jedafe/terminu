@@ -16,10 +16,10 @@ Owns: SSH profiles/connections, host health, Docker pane. Table
 
 ## Server health
 
-- `GET /api/health/host` → CPU/RAM/disk/load/top-processes. Local host
-  via sysinfo; SSH target via one-shot command. Read-only, informational
-  risk. Refresh on view open + interval while visible — no always-on
-  poller (weight budget).
+- `GET /api/health/host?target=` → CPU/RAM/disk/load/top-processes. Local
+  host via sysinfo; `target=<ssh_profile_id>` runs a one-shot remote
+  command. Read-only, informational risk. Refresh on view open + interval
+  while visible — no always-on poller (weight budget).
 
 ## Docker pane
 

@@ -9,8 +9,8 @@ budgets. Table `settings`.
   pipeline. The single binary **embeds the built web assets** (`go:embed`)
   so it serves the UI itself — no separate static host, true single-
   artifact deploy. Binds `TU_BIND:TU_PORT`.
-- Boot requirements: `TU_SESSION_SECRET`, `TU_ADMIN_USER`,
-  `TU_ADMIN_PASS_HASH` — everything else defaults.
+- Boot requirements: `TU_SESSION_SECRET`, `TU_ADMIN_USER`, and either
+  `TU_ADMIN_PASS_HASH` or `TU_ADMIN_PASSWORD` — everything else defaults.
 
 ## Operational model (gate-friendly)
 

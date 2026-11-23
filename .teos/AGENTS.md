@@ -125,7 +125,8 @@ explicitly asks otherwise.
 
 - Never commit secrets, tokens, keys, or `.env` contents — `TU_*` vars only.
 - Never run the server or any service as root in spec or code; no silent
-  privilege elevation.
+  privilege elevation. Sole exception: opt-in `nsenter` host-access mode
+  (§12/ADR-006) — documented, deployment-time, operator-chosen.
 - Every privileged execution writes an audit row (actor, command, target,
   result).
 - The overlay never auto-injects keystrokes — the human always sends
@@ -176,6 +177,7 @@ Do not load all sections at once.
 | Mix package managers | Bun for TS; go modules for Go |
 | Write npm/`better-sqlite3`/`ws`/`express` | Bun stdlib + the pinned stack in `.ai/stack.yaml` |
 | Ship an unregistered migration | MIGRATION-ORDER.md first |
+| Write to `internal/db/` directly | sqlc-generated — edit query files, regenerate (Rule 14) |
 | Add scope not in the roadmap | Rule 10 — deferred table or `ideas/` |
 
 ---

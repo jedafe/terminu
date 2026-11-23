@@ -27,9 +27,11 @@ spawn → starting → working ⇄ waiting-for-input → done | error
 ## Persistence
 
 - `sessions` row per PTY; `session_state_log` append-only transitions.
+- Scrollback lives in the per-session in-memory ring buffer
+  (`TU_SESSION_BUFFER_KB`); `GET /api/sessions/{id}/scrollback` pages it —
+  it is not persisted separately (a restart ends the session anyway).
 - Restart policy: a server restart does NOT respawn PTYs (they died with
-  the host); sessions resume as `detached→ended` records — honest, not
-  fake-restored.
+  the host); sessions are marked `ended` — honest, not fake-restored.
 - `workspaces` persist layout (which session ids in which tabs/splits) —
   views, not processes.
 

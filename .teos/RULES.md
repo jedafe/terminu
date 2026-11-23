@@ -50,7 +50,9 @@ regression test.
 
 **Never run Terminu components as root** in container spec, docs, or code.
 No silent setuid, no privileged ports, no host mounts beyond declared
-workspace roots.
+workspace roots. Sole exception: the opt-in `nsenter` host-access mode
+(§12, ADR-006) — its privilege requirement is documented, deployment-time,
+and explicitly chosen by the operator; that is the opposite of silent.
 
 **Never make the LLM path load-bearing.** The product works fully with no
 LLM configured; LLM output never bypasses the risk gate; screen content

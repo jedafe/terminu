@@ -43,5 +43,6 @@ Rules:
 | `target_unreachable` | 502 | SSH/docker target down |
 | `rate_limited` | 429 | endpoint tier exceeded |
 | `invalid_manifest` | 400 | manifest schema violation |
+| `invalid_transition` | 409 | out-of-order session lifecycle op (§03) |
 | `ws_upgrade_failed` | 400 | WS handshake rejected |
 | `internal` | 500 | unhandled — logged, never leaked detail |

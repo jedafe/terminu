@@ -1,5 +1,27 @@
 # TEOS Changelog
 
+## v0.3.2 — 2026-11-23
+
+Deep-review pass #2 — full-file read-through (routes↔tables, env↔sections,
+rules↔modes):
+
+- Contradiction fixed: no-root rule now carries the explicit `nsenter`
+  carve-out (RULES + AGENTS) — it conflicted with ADR-006 host access
+- Route gaps closed — every table now has a route: `alerts` (`/api/alerts`
+  + ack), `launch_profiles` (`/api/agents/profiles` CRUD), `workspaces`
+  (`/api/workspaces`), `settings` (`/api/settings`), `file_transfers`
+  (`/api/files/transfers`), `adapter_pins` (`/api/adapters` pin/badge),
+  session `PATCH`, bookmark `DELETE`, health `?target=` for remote hosts
+- `invalid_transition` error code registered (was used, never registered)
+- Rate-limit tiers defined in §10 (was a `rate_limited` code with no
+  tiers); `/ws/events` clarified as read-only broadcast, auth at upgrade
+- New env vars: `TU_ADMIN_PASSWORD` (first-boot plaintext alternative),
+  `TU_ALLOWED_ORIGINS` (was enforced with no knob), `TU_WS_MAX_FRAME_KB`,
+  `TU_WEB_DEV_PORT`
+- `detached` clarified as an overlay flag on process state, not a state
+  itself; §03 restart wording + scrollback-from-ring-buffer documented
+- MIGRATION-ORDER: `session_state_log` single-owner (§03; §05 consumes)
+
 ## v0.3.1 — 2026-11-23
 
 Full-corpus review pass against the product decisions (spec §3 P1–P7,

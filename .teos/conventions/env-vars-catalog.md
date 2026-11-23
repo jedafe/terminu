@@ -13,7 +13,9 @@ model; none are required to boot except where marked.
 | `TU_SQLITE_PATH` | `$TU_DATA_DIR/terminu.db` | SQLite file (WAL) |
 | `TU_SESSION_SECRET` | *required* | Cookie/session-token signing |
 | `TU_ADMIN_USER` | *required first boot* | Initial super-admin username |
-| `TU_ADMIN_PASS_HASH` | *required first boot* | Initial admin password hash |
+| `TU_ADMIN_PASS_HASH` | *required first boot* | Initial admin password — pre-hashed |
+| `TU_ADMIN_PASSWORD` | — | Alternative: plaintext at first boot only — hashed into DB, never stored |
+| `TU_ALLOWED_ORIGINS` | same-origin | WS/HTTP origin allowlist — set every proxy domain |
 | `TU_DEFAULT_SHELL` | user shell | Fallback shell for new terminal sessions |
 | `TU_SESSION_BUFFER_KB` | `512` | Per-session scrollback cap |
 | `TU_MAX_SESSIONS` | `50` | Concurrent session ceiling |
@@ -32,6 +34,8 @@ model; none are required to boot except where marked.
 | `TU_SSH_KNOWN_HOSTS` | `$TU_DATA_DIR/known_hosts` | Host verification store |
 | `TU_LOG_LEVEL` | `info` | tracing filter |
 | `TU_SECRETS_KEY` | *required* | Master key for encrypted secret store |
+| `TU_WS_MAX_FRAME_KB` | `64` | Per-frame size cap on session/event sockets |
+| `TU_WEB_DEV_PORT` | `5173` | Dev-mode proxy target for the Bun dev server (§10) |
 
 Rules: `TU_` prefix mandatory; secrets (`*_SECRET`, `*_KEY`, `*_HASH`)
 never logged, exported, or committed; a var used in code but missing here

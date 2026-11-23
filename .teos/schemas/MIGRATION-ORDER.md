@@ -10,7 +10,7 @@ precedes its parent.
 | 2 | `auth_sessions` | login sessions, tokens, expiry | §09 |
 | 3 | `workspaces` | named workspaces, layout, last-open | §03 |
 | 4 | `sessions` | terminal session records (target, cwd, shell, state, detached_at) | §03 |
-| 5 | `session_state_log` | transition history (state, kind, confidence, evidence, at) | §03, §05 |
+| 5 | `session_state_log` | transition history (state, kind, confidence, evidence, at) | §03 (§05 consumes) |
 | 6 | `command_manifests` | registry manifests (source: builtin/discovered/custom) | §04 |
 | 7 | `launch_profiles` | saved agent launches (tool, flags, env, cwd, resume_cmd) | §05 |
 | 8 | `adapter_pins` | per-tool verified-version records + pin status | §06 |

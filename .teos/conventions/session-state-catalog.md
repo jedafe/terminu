@@ -12,7 +12,7 @@ contract across `SessionState`, the registry, WS `state` frames, and the UI.
 | `waiting-for-input` | blocked awaiting user; **carries `kind`** | adapter detection |
 | `done` | exited code 0 | process exit |
 | `error` | exited non-zero or adapter error-match | process exit / adapter |
-| `detached` | no client attached beyond `TU_RECONNECT_WINDOW_S` | Session Manager |
+| `detached` | overlay flag, not a process state — set when no client is attached beyond `TU_RECONNECT_WINDOW_S`; the session keeps running and its process state (`working`/`waiting`) still applies (`detached + working` = "working, unattended") | Session Manager |
 | `ended` | process lost on server restart — record kept, honest not fake-resumed | Session Manager |
 | `undetectable` | screen model failed; process state only | Screen Interpreter |
 
