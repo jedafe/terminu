@@ -16,7 +16,9 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/jedafe/terminu/internal/domain"
+	"github.com/jedafe/terminu/internal/gate"
 	"github.com/jedafe/terminu/internal/proc"
+	"github.com/jedafe/terminu/internal/screen"
 )
 
 // Client is one attached consumer of PTY output. Slow clients drop on a
@@ -39,6 +41,8 @@ type ptySession struct {
 	exit  chan int
 	once  sync.Once
 	mgr   *Manager
+	scr   *screen.Screen // §06 headless model — fed in readLoop
+	gt    *gate.Gate     // trigger gate — emits scan events on s.done
 }
 
 // spawnArgv builds the child argv per local-target mode (ADR-006).
@@ -161,13 +165,18 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 		done:  make(chan struct{}),
 		exit:  make(chan int, 1),
 		mgr:   m,
+		scr:   screen.New(rec.Cols, rec.Rows, m.cfg.ScreenScrollback),
+		gt:    gate.New(time.Duration(m.cfg.QuiescenceMS)*time.Millisecond, m.cfg.ScanBottomRows),
 	}
 	go s.readLoop()
 	go s.waitLoop()
+	go s.gt.Run(s.done, s)
 	return s, nil
 }
 
-// readLoop is the single PTY reader: bytes → ring (seq++) → fan-out.
+// readLoop is the single PTY reader: bytes → ring (seq++) → fan-out →
+// screen model + gate notify (the §06 detection feed; parsing is not
+// detection — adapters only run on gate emits).
 func (s *ptySession) readLoop() {
 	buf := make([]byte, 32*1024)
 	for {
@@ -178,6 +187,8 @@ func (s *ptySession) readLoop() {
 			putU64(frame[:8], seq)
 			copy(frame[8:], buf[:n])
 			s.broadcast(frame)
+			_, _ = s.scr.Write(buf[:n])
+			s.gt.NotifyFrame()
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrClosed) {
@@ -227,6 +238,7 @@ func (s *ptySession) AttachClient(c *Client, lastSeq uint64) ([]chunk, uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.conns[c] = struct{}{}
+	s.gt.Request() // a view opening is an authorized on-demand scan
 	if lastSeq == 0 {
 		return s.buf.snapshot()
 	}
@@ -263,9 +275,10 @@ func (s *ptySession) Write(p []byte) error {
 	return err
 }
 
-// Resize propagates SIGWINCH to the PTY child.
+// Resize propagates SIGWINCH to the PTY child and the screen model.
 func (s *ptySession) Resize(cols, rows int) {
 	s.rec.Cols, s.rec.Rows = cols, rows
+	s.scr.Resize(cols, rows)
 	_ = pty.Setsize(s.ptmx, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 }
 
@@ -277,6 +290,30 @@ func (s *ptySession) Rec() *domain.Session { return s.rec }
 func (s *ptySession) Foreground() (proc.Info, error) {
 	return proc.Foreground(s.ptmx)
 }
+
+// --- gate.Source implementation (read on gate ticks only) ---
+
+// BottomText returns the bottom `rows` rows of the screen model.
+func (s *ptySession) BottomText(rows int) string {
+	_, h := s.scr.Size()
+	y0 := h - rows
+	if y0 < 0 {
+		y0 = 0
+	}
+	return s.scr.Text(y0, h)
+}
+
+// Cursor returns the model cursor for the cursor-to-input trigger.
+func (s *ptySession) Cursor() (x, y int, visible bool) { return s.scr.Cursor() }
+
+// Rows returns the model height.
+func (s *ptySession) Rows() int { _, r := s.scr.Size(); return r }
+
+// Screen exposes the headless screen model for detection reads.
+func (s *ptySession) Screen() *screen.Screen { return s.scr }
+
+// GateEvents exposes the trigger-gate channel for the adapter runner.
+func (s *ptySession) GateEvents() <-chan gate.Event { return s.gt.Events }
 
 // ExitCode reports the process exit code once EOF has fired.
 func (s *ptySession) ExitCode() *int {
@@ -305,5 +342,3 @@ func putU64(b []byte, v uint64) {
 		b[i] = byte(v >> (8 * (7 - i)))
 	}
 }
-
-var _ = time.Now // silence unused if time not needed later
