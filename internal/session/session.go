@@ -231,6 +231,9 @@ func (s *ptySession) Resize(cols, rows int) {
 	_ = pty.Setsize(s.ptmx, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 }
 
+// Rec exposes the session record (read-only) for control frames.
+func (s *ptySession) Rec() *domain.Session { return s.rec }
+
 // ExitCode reports the process exit code once EOF has fired.
 func (s *ptySession) ExitCode() *int {
 	select {

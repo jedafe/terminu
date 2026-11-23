@@ -45,4 +45,5 @@ Rules:
 | `invalid_manifest` | 400 | manifest schema violation |
 | `invalid_transition` | 409 | out-of-order session lifecycle op (§03) |
 | `ws_upgrade_failed` | 400 | WS handshake rejected |
+| `bad_request` | 400 | malformed JSON / missing field |
 | `internal` | 500 | unhandled — logged, never leaked detail |

@@ -25,8 +25,12 @@ type ctl struct {
 
 // s→c control frames. Binary s→c frames = seq-prefixed PTY output.
 type helloMsg struct {
-	Type    string `json:"type"`
-	NextSeq uint64 `json:"next_seq"`
+	Type      string `json:"type"`
+	SessionID string `json:"session_id"`
+	Cols      int    `json:"cols"`
+	Rows      int    `json:"rows"`
+	State     string `json:"state"`
+	NextSeq   uint64 `json:"next_seq"`
 }
 type eofMsg struct {
 	Type     string `json:"type"`
@@ -76,7 +80,11 @@ func (s *Server) wsSession(w http.ResponseWriter, r *http.Request) {
 	chunks, next := sess.AttachClient(client, att.LastSeq)
 	defer sess.Detach(client)
 
-	if err := sendCtl(c, helloMsg{Type: "hello", NextSeq: next}); err != nil {
+	if err := sendCtl(c, helloMsg{
+		Type: "hello", SessionID: id,
+		Cols: sess.Rec().Cols, Rows: sess.Rec().Rows,
+		State: string(sess.Rec().State), NextSeq: next,
+	}); err != nil {
 		return
 	}
 	for _, ch := range chunks {

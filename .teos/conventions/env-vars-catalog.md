@@ -31,6 +31,7 @@ model; none are required to boot except where marked.
 | `TU_SFTP_ENABLED` | `false` | SFTP protocol endpoint (ADR-006) — gate-friendly |
 | `TU_SFTP_PORT` | `2022` | SFTP listener port |
 | `TU_LOCAL_TARGET_MODE` | `container` | `host\|nsenter\|container` — how `local` target reaches the host (§12) |
+| `TU_HOST_USER` | `japa` | Login user `su`'d to inside nsenter mode |
 | `TU_SSH_KNOWN_HOSTS` | `$TU_DATA_DIR/known_hosts` | Host verification store |
 | `TU_LOG_LEVEL` | `info` | tracing filter |
 | `TU_SECRETS_KEY` | *required* | Master key for encrypted secret store |

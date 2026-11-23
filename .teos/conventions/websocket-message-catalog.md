@@ -27,14 +27,20 @@ increasing `seq`; the client tracks its last-received seq and sends it as
 `attach.last_seq` — the first frame after every upgrade. The server
 replays buffered `data` frames with `seq > last_seq`, then sends `hello`
 with `next_seq`. Same session, no respawn (Rule 6). Client→server `input`
-frames carry no seq (order is the WS stream itself).
+frames carry no seq (order is the WS stream itself). Snapshot+subscribe
+is atomic; clients dedup boundary frames by `seq` (ignore `seq ≤ last`).
+If `last_seq` fell out of the retained window, the server silently falls
+back to a full snapshot — `error{resync_overflow}` is advisory only.
 
 ## Events socket `/ws/events`
 
 | `t` | Payload | Purpose |
 |-----|---------|---------|
 | `agent.state` | `{session_id, process, state, kind?, confidence}` | feeds needs-you view |
-| `session.added` / `session.removed` | `{session_id}` | registry deltas |
+| `session.added` / `session.removed` | `{session_id, session?}` | registry deltas |
+| `session.exited` | `{session_id, session}` | process exit → done/error |
+| `session.detached` | `{session_id}` | last viewer left (process runs) |
+| `session.changed` | `{session_id}` | metadata change (rename) |
 | `alert` | `{level, session_id, transition}` | waiting/done/error alerts |
 | `files.progress` | `{transfer_id, done, total}` | upload/download queues |
 | `docker.delta` | `{container, status}` | docker pane refresh |
