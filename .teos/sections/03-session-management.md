@@ -6,7 +6,7 @@ workspaces. Tables `workspaces`, `sessions`, `session_state_log`.
 ## Model
 
 - A **session** = an owned PTY process tree + screen model + state. The
-  server owns it; clients attach as views. Session ≠ window (P-Principle).
+  server owns it; clients attach as views. Session ≠ window (AP1/AP2).
 - States/kinds/confidence per `conventions/session-state-catalog.md` —
   the catalog is the contract; this section owns transitions.
 

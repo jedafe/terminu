@@ -1,7 +1,7 @@
 # Terminu Engineering Operating System (TEOS)
 
 **Product:** Terminu — the control room for your AI agents
-**Version:** v0.1.0 (pre-implementation)
+**Version:** v0.3.3 (pre-implementation)
 **Status:** Planning — corpus seeded from product decisions; no code yet
 
 TEOS is the canonical source of truth for all Terminu technical decisions,
@@ -64,7 +64,8 @@ terminu/
     │   ├── project.yaml       ← Product metadata
     │   ├── stack.yaml         ← Tech stack with pinned versions
     │   ├── architecture.yaml  ← Principles, layers, package map
-    │   └── glossary.yaml      ← Terminu-specific terms
+    │   ├── glossary.yaml      ← Terminu-specific terms
+    │   └── context/           ← Live phase/task tracker
     │
     ├── roadmaps/
     │   └── ROADMAP-V1.md      ← Phase 0–4 task plan + post-1.0 program

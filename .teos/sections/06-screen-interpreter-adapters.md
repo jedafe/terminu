@@ -14,7 +14,8 @@ impls, generic fallback tiers, fixture pipeline. Tables `adapter_pins`,
 ## Trigger gate — the only authorized detection times
 
 `quiescence (TU_QUIESCENCE_MS)` · `bottom-region dirty` ·
-`cursor-to-input` · `on-demand (view open)` · `foreground process change`.
+`cursor-to-input` · `on-demand (view open)` · `foreground process change`
+(local: `tcgetpgrp` on gate ticks; remote targets: `ps` scrape — §08).
 No per-frame scans — budget rule.
 
 ## Adapter contract (Rule 7)

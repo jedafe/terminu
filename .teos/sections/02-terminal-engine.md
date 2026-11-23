@@ -39,7 +39,8 @@ reconnect, tabs/splits. Solves P1, P2, P3, P5 of the brief.
 ## Clipboard (P2)
 
 - OSC52 sequences in PTY output → device clipboard (bridge runs before
-  renderer consumes them; emit `clipboard.copy` client event).
+  renderer consumes them; emit `clipboard.copy` as a browser CustomEvent —
+  client-internal, not a WS type).
 - Select-to-copy on mouse/touch release (where the TUI isn't holding mouse
   capture); dedicated paste button → `navigator.clipboard.readText` →
   bracketed-paste into PTY.

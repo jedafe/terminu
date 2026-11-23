@@ -1,12 +1,12 @@
 # Terminu — architecture principles & package map (Go per ADR-005)
-principles:
-  P1: sessions_not_windows        # unit of persistence = running session
-  P2: session_is_server_side      # PTY owned by server; clients attach/detach
-  P3: universal_detection_curated_depth   # every CLI: process+screen free; depth is adapters
-  P4: ai_enhances_never_gates     # LLM opt-in; deterministic path always-on
-  P5: security_is_substrate       # every privileged action through broker (ADR-004)
-  P6: lightweight_by_budget       # <150MB idle, single container, SQLite
-  P7: touch_is_first_class        # designed for phone, not adapted
+principles:   # AP-prefix — brief uses P1–P7 for *problems*; these are principles
+  AP1: sessions_not_windows        # unit of persistence = running session
+  AP2: session_is_server_side      # PTY owned by server; clients attach/detach
+  AP3: universal_detection_curated_depth   # every CLI: process+screen free; depth is adapters
+  AP4: ai_enhances_never_gates     # LLM opt-in; deterministic path always-on
+  AP5: security_is_substrate       # every privileged action through broker (ADR-004)
+  AP6: lightweight_by_budget       # <150MB idle, single container, SQLite
+  AP7: touch_is_first_class        # designed for phone, not adapted
 shape: modular_monolith           # one server binary, package seams
 layers:
   experience:   [sveltekit-ui, touch-chrome, overlay-buttons, keybar]

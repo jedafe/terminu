@@ -1,5 +1,31 @@
 # TEOS Changelog
 
+## v0.3.3 — 2026-11-23
+
+Deep pass #3 — protocol/design-level audit:
+
+- **WS resync hole closed:** the contract told clients to "send last seq
+  on re-attach" but no c→s frame carried it — new `attach {last_seq}`
+  first-frame; `data` frame `seq` encoding specified (8B uint64 BE
+  prefix); `state`/`agent.state` `waiting?` → `kind?` (matches the state
+  catalog vocabulary)
+- **SFTP protocol-reality check (§07):** per-op `confirmed` tokens can't
+  exist on a protocol client — connection auth is the gate; mutations are
+  `controlled`-equivalent + audited, non-mutating roles get read-only
+  sessions. Virtual root namespacing defined (`/local`, `/s3`,
+  `/remote-<profile>`) matching the HTTP `{provider}` syntax
+- **`user_public_keys` table (#16)** — SFTP key auth had nowhere to store
+  keys; §09 updated. Circular-FK guard note added (workspaces↔sessions)
+- **Docker exec deduplicated:** was a parallel `/ws/docker/exec/{id}`
+  socket with no seq/resync contract — now `POST …/exec → session_id` →
+  normal session socket (it was already "a session" per §08)
+- **P-namespace collision fixed:** architecture principles relabeled
+  `AP1–AP7` — the brief's P1–P7 are *problems*; §03's vague "(P-Principle)"
+  → AP1/AP2
+- Smaller: spawn target syntax, `?q=`/`?target=` params, `clipboard.copy`
+  marked browser-event (not WS), process-change trigger mechanism,
+  `terminu.toml` key-mapping rule, README version/map sync
+
 ## v0.3.2 — 2026-11-23
 
 Deep-review pass #2 — full-file read-through (routes↔tables, env↔sections,

@@ -28,12 +28,19 @@ native clients (`sftp` CLI, Cyberduck-class tools, rsync-style flows)
 get protocol access — not just the web UI:
 
 - `gliderlabs/ssh` + `pkg/sftp` server on `TU_SFTP_PORT`; host keys from
-  the secret store; auth = §09 users (password or public key).
+  the secret store; auth = §09 users — password always, public key via
+  `user_public_keys` (SFTPGo-parity: key auth is the norm for protocol
+  clients).
 - Every protocol op maps onto `StorageProvider` — `SSH_FXP_*` →
-  `List/Stat/Read/Write/Mkdir/Rename/Delete`. A client sees the same
-  provider tree the web UI shows.
+  `List/Stat/Read/Write/Mkdir/Rename/Delete`. A client sees a **virtual
+  root** mirroring the web UI's `{provider}` namespacing: `/local/`,
+  `/s3/`, `/remote-<profile_id>/`.
 - Mutations pass the broker + audit like any file op; the SFTP surface
-  adds no second security model.
+  adds no second security model. **Policy translation:** protocol clients
+  can't render a confirmation dialog, so per-op `confirmed` tokens don't
+  exist here — connection auth *is* the gate. SFTP mutations run at
+  `controlled`-equivalent (role-checked at connect, audited per op);
+  a role that may not mutate simply gets a read-only session.
 - `TU_SFTP_ENABLED=false` default — the endpoint is gate-friendly:
   start it when protocol access is needed, stop it otherwise.
 

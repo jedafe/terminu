@@ -40,3 +40,8 @@ model; none are required to boot except where marked.
 Rules: `TU_` prefix mandatory; secrets (`*_SECRET`, `*_KEY`, `*_HASH`)
 never logged, exported, or committed; a var used in code but missing here
 is a Rule-11 violation.
+
+`terminu.toml` overrides (§01): key = var name minus `TU_`, lowercased,
+first `_` → `.` (namespace): `TU_MAX_SESSIONS` → `max.sessions`,
+`TU_SFTP_PORT` → `sftp.port`, `TU_ADMIN_USER` → `admin.user`. Env beats
+file beats default.

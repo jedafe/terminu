@@ -1,13 +1,16 @@
 # Section 09 — Security & Execution Broker
 
 Owns: auth, roles, broker pipeline, risk model, audit, secret store.
-Tables `users`, `auth_sessions`, `audit_log`. Implements ADR-004.
+Tables `users`, `auth_sessions`, `audit_log`, `user_public_keys`.
+Implements ADR-004.
 
 ## Auth
 
 - Session-cookie auth (Argon2 password hashes; `TU_ADMIN_*` seeds the
   first admin). `auth_sessions` rows; secure+httponly+samesite cookies;
   expiry + revocation.
+- `user_public_keys` holds per-user SSH public keys — used by the SFTP
+  endpoint (§07, ADR-006); managed via `/api/users` admin surface.
 - Roles v1: `admin` (all) · `operator` (run/attach/execute non-restricted)
   · `viewer` (read/attach, no mutating ops). Org/OIDC deferred.
 

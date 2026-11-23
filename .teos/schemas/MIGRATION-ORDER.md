@@ -21,6 +21,7 @@ precedes its parent.
 | 13 | `file_transfers` | upload/download queue records + resume cursors | §07 |
 | 14 | `alerts` | emitted state-change notifications (ack state) | §05 |
 | 15 | `settings` | runtime-configurable knobs (TU_* defaults, UI prefs) | §12 |
+| 16 | `user_public_keys` | per-user public keys for SFTP endpoint auth (ADR-006) | §09 |
 
 Notes:
 
@@ -33,3 +34,8 @@ Notes:
 - FK `ON DELETE` behavior: sessions → `session_state_log` cascades;
   users → `auth_sessions` cascades; `audit_log` never cascades (actor id
   is retained as text on user delete — audit integrity outlives accounts).
+- **Circular-FK guard:** `sessions.workspace_id → workspaces` is the real
+  FK (workspaces precede sessions). `workspaces.last_open` may reference a
+  session — store it as a plain column with **no FK constraint** (JEOS
+  Rule-13 pattern: never create the cycles workspaces↔sessions).
+- `user_public_keys` FK → `users` cascades — keys die with the account.

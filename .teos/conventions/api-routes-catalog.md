@@ -11,7 +11,8 @@ all privileged ops pass the broker.
 
 ## Sessions (§03, §02)
 - `GET    /api/sessions` — live session list + states
-- `POST   /api/sessions` — spawn (broker: controlled)
+- `POST   /api/sessions` — spawn `{target, cwd, shell}`; target =
+  `local` | `ssh:<profile_id>` | `docker:<container_id>` (broker: controlled)
 - `GET    /api/sessions/{id}` — detail + state + scrollback tail
 - `PATCH  /api/sessions/{id}` — rename/annotate
 - `DELETE /api/sessions/{id}` — terminate (broker: controlled)
@@ -35,13 +36,15 @@ all privileged ops pass the broker.
 - `GET /api/adapters/{tool}` — pin detail + fixture/replay status
 
 ## Command Intelligence (§04)
-- `GET  /api/commands` — registry query (palette search)
+- `GET  /api/commands?q=` — registry query (palette search)
 - `GET  /api/commands/{id}` — manifest detail
 - `POST /api/commands/{id}/execute` — broker-gated execution
 - `GET  /api/commands/context/{session_id}` — context-relevant actions
-- `GET  /api/discovered` — auto-discovered commands on target
+- `GET  /api/discovered?target=` — auto-discovered commands on target
 
 ## Files (§07)
+`{provider}` = `local` | `s3` | `sftp:<profile_id>` — same namespacing as
+the SFTP endpoint's virtual root (§07).
 - `GET    /api/files/{provider}/list?path=` — listing
 - `GET    /api/files/{provider}/stat?path=`
 - `POST   /api/files/{provider}/mkdir|rename|delete` — broker-gated
@@ -60,7 +63,8 @@ all privileged ops pass the broker.
 - `GET  /api/docker/containers` · `GET /api/docker/images`
 - `GET  /api/docker/containers/{id}/logs`
 - `POST /api/docker/containers/{id}/{start|stop|restart}` — broker: confirmed
-- `WS   /ws/docker/exec/{id}` — exec shell (broker; a session into container)
+- `POST /api/docker/containers/{id}/exec` — exec shell → `{session_id}`;
+  attach via `/ws/session/{id}` (it IS a session — §08 reuses §02/§03)
 
 ## Users/Roles (§09, Phase 4)
 - `GET/POST/PATCH/DELETE /api/users` — admin only

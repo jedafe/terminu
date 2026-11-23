@@ -24,8 +24,10 @@ Owns: SSH profiles/connections, host health, Docker pane. Table
 ## Docker pane
 
 - Engine API via `TU_DOCKER_SOCKET` through the broker. Capabilities:
-  list containers/images, logs, exec shell (a session into the container —
-  reuses §02/§03 wholesale), start/stop/restart (`confirmed` risk).
+  list containers/images, logs, start/stop/restart (`confirmed` risk),
+  exec shell — `POST …/exec` returns a `session_id` attached via the
+  normal `/ws/session/{id}` path (it reuses §02/§03 wholesale — no
+  separate socket contract).
 - No compose editor, no image workflows (deferred — brief §13).
 
 ## Acceptance
