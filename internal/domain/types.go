@@ -21,6 +21,26 @@ const (
 	StateUndetectable    SessionState = "undetectable"
 )
 
+// WaitKind is the kind a waiting-for-input state carries (catalog §kinds).
+type WaitKind string
+
+const (
+	WaitPermission WaitKind = "permission" // tool asking to allow an action
+	WaitOption     WaitKind = "option"     // numbered/lettered choices
+	WaitConfirm    WaitKind = "confirm"    // y/n confirmation
+	WaitFreetext   WaitKind = "freetext"   // open question expecting a reply
+	WaitUnknown    WaitKind = "unknown"    // heuristic-only wait — no buttons
+)
+
+// Confidence grades a detection match (catalog §confidence).
+type Confidence string
+
+const (
+	ConfidenceHigh   Confidence = "high"   // adapter pattern matched
+	ConfidenceMedium Confidence = "medium" // generic tier G1–G3
+	ConfidenceLow    Confidence = "low"    // G4 heuristic only
+)
+
 // Execution targets — {target} syntax on spawn (api-routes-catalog).
 type Target struct {
 	Kind string `json:"kind"` // local | ssh | docker
