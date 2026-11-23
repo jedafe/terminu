@@ -3,7 +3,7 @@
 Canonical session/agent states (AGENTS.md Rule 11). These names are the
 contract across `SessionState`, the registry, WS `state` frames, and the UI.
 
-## Lifecycle states
+## Lifecycle states & flags
 
 | State | Meaning | Source |
 |-------|---------|--------|

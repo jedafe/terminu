@@ -21,8 +21,8 @@ conflicts with convenience, the rule wins. Pinned stack versions live in
 `broker.Execute()` — policy, confirmation, and audit live there.
 
 **Never interpolate user input into a command string.** Structured argv
-only — `executable` + `arguments[]`. No `format!("rm -rf {path}")` anywhere,
-ever.
+only — `executable` + `arguments[]`. No `fmt.Sprintf("rm -rf %s", path)`
+anywhere, ever.
 
 **Never let a client attach kill or duplicate a session.** Attach/detach are
 idempotent view operations. A second attach resyncs the same PTY; it never

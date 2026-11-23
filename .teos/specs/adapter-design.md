@@ -31,7 +31,8 @@ PTY output stream
       ▼
 Headless VT parser (per session) ──► Screen model (grid + attrs + cursor)
       │                                   ▲ incremental: dirty regions only
-      ├──► Process-tree walk (periodic, ~1s)
+      ├──► Foreground-process check (on gate ticks — cheap fg-pid/
+      │        tcgetpgrp read; remote targets: `ps` scrape)
       │        └──► "devin" runs in session S → bind adapter(devin)
       ▼
 Trigger gate (§4) ── decides WHEN to run detection, not every frame
@@ -78,7 +79,7 @@ Detection must never run per frame. Run an adapter pass when ANY of:
 | Bottom-region dirty + process is adapted | Cheap prefilter |
 | Cursor moved to bottom line after activity | Input region reached |
 | Client requests current state (view open) | On-demand refresh |
-| Foreground process changed | Re-bind adapter, re-scan |
+| Foreground process changed (detected on gate ticks) | Re-bind adapter, re-scan |
 
 A quiesced session costs **zero** — the strongest property of this
 design: idle panes are free.
@@ -110,7 +111,7 @@ type StateMatch struct {
 }
 
 type Prompt struct {
-    Kind    PromptKind      // options | confirm | permission | freetext
+    Kind    PromptKind      // option | confirm | permission | freetext
     Title   string          // "Do you want to proceed?"
     Options []PromptOption  // for options/confirm/permission
 }

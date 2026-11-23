@@ -48,8 +48,9 @@ reconnect, tabs/splits. Solves P1, P2, P3, P5 of the brief.
 
 ## Reconnect contract (P3)
 
-- WS drop → client retries with backoff → server replays from client's
-  last sequence → same session, scrollback tail restored. Never respawns.
+- WS drop → client retries with backoff → `attach{last_seq}` frame →
+  server replays buffered frames → same session, scrollback tail
+  restored. Never respawns.
 - Beyond `TU_RECONNECT_WINDOW_S`, session shows `detached` and a manual
   attach resumes it (session outlives the window — Rule 6).
 

@@ -1,6 +1,6 @@
 # TEOS — Master Index
 
-**TEOS v0.1.0** | Terminu Engineering Operating System
+**TEOS v0.3.4** | Terminu Engineering Operating System
 **Status:** Pre-implementation — corpus seeded from v2 product decisions
 
 This is the single file an agent should load first. Every file in this
@@ -61,7 +61,7 @@ Read the section before implementing.
 
 | File | Purpose |
 |------|---------|
-| `schemas/MIGRATION-ORDER.md` | Ordered table registry (15 tables) — register before migrating |
+| `schemas/MIGRATION-ORDER.md` | Ordered table registry (16 tables) — register before migrating |
 
 ## Specs — product/design depth
 
@@ -84,7 +84,7 @@ Read the section before implementing.
 | `.ai/context/current-phase.md` | Live phase/task tracker — agents check here first |
 | `.ai/project.yaml` | Product metadata, personas, wedge |
 | `.ai/stack.yaml` | Pinned tech stack |
-| `.ai/architecture.yaml` | Principles P1–P7, layers, package map |
+| `.ai/architecture.yaml` | Principles AP1–AP7, layers, package map |
 | `.ai/glossary.yaml` | Terminu-specific term definitions |
 
 ## Root operating files

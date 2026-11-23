@@ -1,7 +1,7 @@
 # Terminu Engineering Operating System (TEOS)
 
 **Product:** Terminu — the control room for your AI agents
-**Version:** v0.3.3 (pre-implementation)
+**Version:** v0.3.4 (pre-implementation)
 **Status:** Planning — corpus seeded from product decisions; no code yet
 
 TEOS is the canonical source of truth for all Terminu technical decisions,

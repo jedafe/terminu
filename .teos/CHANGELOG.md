@@ -1,5 +1,20 @@
 # TEOS Changelog
 
+## v0.3.4 — 2026-11-23
+
+Final sweep — every file read end-to-end:
+
+- Design-spec contradiction: adapter-design's "process-tree walk
+  (periodic, ~1s)" polled — conflicts with the gate-tick model;
+  now reads "on gate ticks — cheap fg-pid/tcgetpgrp" + `ps` scrape note
+- `PromptKind` drift: spec said `options`, catalog says `option` — fixed
+- Rust residue: RULES `format!` → `fmt.Sprintf`
+- pty-lifecycle skill updated to the `attach{last_seq}`/`hello{next_seq}`
+  protocol; `detached` correctly an overlay flag, `ended` terminal
+- TEOS.md version/table-count/AP-principles sync (was v0.1.0/15/P1–P7);
+  README v0.3.4; state-catalog header "states & flags"
+- §02 reconnect contract now names the `attach` frame
+
 ## v0.3.3 — 2026-11-23
 
 Deep pass #3 — protocol/design-level audit:

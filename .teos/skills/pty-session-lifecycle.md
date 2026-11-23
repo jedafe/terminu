@@ -6,7 +6,8 @@ implementation as the canonical shape — update post-implementation.
 ## Invariant
 
 The server owns the PTY. A session is `spawn → live(working/waiting) →
-done|error|detached`, never client-owned. Any attach is a view.
+done|error|ended`, never client-owned. `detached` is an attachment flag
+overlaid on the live state, not a state. Any attach is a view.
 
 ## Shape
 
@@ -22,7 +23,8 @@ PTY reader loop:
         → trigger_gate.feed(event)   // detection happens elsewhere
 
 attach(client):
-  → auth via broker → send hello{cursor} → replay scrollback from cursor
+  → auth via broker → client sends attach{last_seq} (first frame)
+  → reply hello{next_seq} → replay buffered data frames seq > last_seq
   → register client chan (bounded) — lagging client gets DropOldest
 
 detach(client): drop chan; start detached timer
