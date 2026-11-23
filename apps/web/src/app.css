@@ -1,0 +1,23 @@
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	background: #0a0e14;
+	color: #e6e6e6;
+	font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+	overscroll-behavior: none;
+	-webkit-tap-highlight-color: transparent;
+}
+#svelte,
+[data-sveltekit-preload-data] + div,
+body > div {
+	height: 100%;
+}
+* {
+	box-sizing: border-box;
+}
+button {
+	cursor: pointer;
+	font-family: inherit;
+}

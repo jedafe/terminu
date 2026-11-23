@@ -1,0 +1,8 @@
+.git
+.teos
+data
+apps/web/node_modules
+apps/web/.svelte-kit
+apps/web/build
+internal/server/web
+*.log
