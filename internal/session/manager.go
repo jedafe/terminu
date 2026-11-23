@@ -29,13 +29,19 @@ type Manager struct {
 
 	// events fans session lifecycle out to /ws/events subscribers.
 	events *EventBus
+
+	// reg is the session-state registry — gate events → Detect →
+	// waiting states (§06 pipeline consumer).
+	reg *registry
 }
 
 var ErrNotFound = errors.New("session not found")
 var ErrLimit = errors.New("session limit reached")
 
 func NewManager(cfg *config.Config, q *gen.Queries, bus *EventBus) *Manager {
-	return &Manager{cfg: cfg, q: q, live: map[string]*ptySession{}, events: bus}
+	m := &Manager{cfg: cfg, q: q, live: map[string]*ptySession{}, events: bus}
+	m.reg = newRegistry(m)
+	return m
 }
 
 // Recover marks rows that were live before restart as ended.
@@ -98,6 +104,7 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	m.mu.Lock()
 	m.live[rec.ID] = ps
 	m.mu.Unlock()
+	m.reg.watch(ps) // detection consumer starts with the PTY
 	rec.State = domain.StateWorking
 	_ = m.setState(ctx, rec.ID, domain.StateWorking, "", "", "")
 	m.events.Pub(Event{Type: "session.added", Session: rec})
@@ -184,6 +191,7 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	m.mu.Lock()
 	delete(m.live, s.rec.ID)
 	m.mu.Unlock()
+	m.reg.unwatch(s.rec.ID)
 	ctx := context.Background()
 	st := domain.StateDone
 	ec := sql.NullInt64{Int64: int64(code), Valid: true}
@@ -196,6 +204,8 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	s.rec.State = st
 	s.rec.ExitCode = &code
 	m.events.Pub(Event{Type: "session.exited", SessionID: s.rec.ID, Session: s.rec})
+	// *→done|error is a catalog notify transition — agent.state carries it.
+	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, State: st})
 }
 
 // onDetached notes last-detach time; the process keeps running.

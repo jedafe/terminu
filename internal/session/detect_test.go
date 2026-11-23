@@ -3,13 +3,18 @@
 package session
 
 import (
+	"context"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/creack/pty"
 
+	"github.com/jedafe/terminu/internal/config"
+	"github.com/jedafe/terminu/internal/db"
+	"github.com/jedafe/terminu/internal/db/gen"
 	"github.com/jedafe/terminu/internal/domain"
 	"github.com/jedafe/terminu/internal/gate"
 	"github.com/jedafe/terminu/internal/screen"
@@ -58,4 +63,66 @@ func TestDetectionFeed(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("screen model never saw the output")
+}
+
+// Full pipeline: real PTY → gate quiescence → fg binder → generic G1 →
+// waiting transition → session_state_log + agent.state on the bus.
+func TestRegistryPipeline(t *testing.T) {
+	ctx := context.Background()
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	bus := NewEventBus()
+	m := NewManager(&config.Config{
+		LocalTargetMode:  "container",
+		SessionBufferKB:  64,
+		QuiescenceMS:     80,
+		ScanBottomRows:   12,
+		ScreenScrollback: 0,
+		MaxSessions:      5,
+	}, gen.New(d), bus)
+	sub := bus.Sub()
+	defer bus.Unsub(sub)
+
+	rec, err := m.Spawn(ctx, domain.SpawnRequest{
+		Target: "local", Shell: "/bin/bash", Name: "t", Cols: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	defer func() { _ = m.Kill(ctx, rec.ID) }()
+
+	s, err := m.Attach(rec.ID)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	// `read` blocks after printf, so the y/n token stays trailing on the
+	// bottom line — quiescence fires while bash waits inside `read`.
+	if err := s.Write([]byte("printf 'ok? [y/N] '; read x\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case e := <-sub:
+			if e.Type != "agent.state" || e.SessionID != rec.ID {
+				continue
+			}
+			if e.State != domain.StateWaitingForInput {
+				t.Fatalf("state = %s, want waiting-for-input", e.State)
+			}
+			if e.Kind != domain.WaitConfirm || e.Confidence != domain.ConfidenceMedium {
+				t.Fatalf("kind=%s conf=%s", e.Kind, e.Confidence)
+			}
+			if e.Process != "bash" {
+				t.Fatalf("process = %q want bash", e.Process)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no agent.state within 5s")
+		}
+	}
 }

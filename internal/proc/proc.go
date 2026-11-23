@@ -28,6 +28,10 @@ func (i Info) Name() string {
 	return i.Comm
 }
 
+// Same reports whether two Infos refer to the same process — pid+pgid
+// is identity; Argv isn't part of it (and makes Info non-comparable).
+func (i Info) Same(o Info) bool { return i.PID == o.PID && i.PGID == o.PGID }
+
 // ErrNoProcess is returned when the foreground group has no live member
 // (e.g. between jobs on an idle shell the pgrp resolves to the shell's
 // own group — callers should treat a shell leader as "shell", not miss).
