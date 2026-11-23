@@ -1,0 +1,35 @@
+# Terminu — tech stack (pin versions here when the repo initializes)
+# ADR-005: backend language = Go
+core:
+  language: go                 # CGO_ENABLED=0 static binary
+  http: net/http               # stdlib ServeMux patterns; chi if needed at impl
+  ws: coder/websocket          # maintained nhooyr fork
+  pty: creack/pty
+  terminal_renderer_frontend: xterm.js   # ghostty-web evaluated alternative — swap is interface-level
+  screen_model: hinshun/vt10x            # detection-fidelity VT model
+  screen_model_spike: wazero + ghostty-wasm   # spike: same parser client+server
+database:
+  engine: sqlite
+  mode: WAL
+  driver: modernc.org/sqlite   # pure Go, no cgo
+  codegen: sqlc                # SQLite dialect — same workflow as JapaConnect
+  committed: day-1             # ADR-003 — no Postgres migration planned
+frontend:
+  framework: sveltekit
+  ui: svelte5
+  tooling: bun                 # bun/bunx/bun run/bun test — never npm/npx/pnpm/yarn
+remote_targets:
+  ssh_client: golang.org/x/crypto/ssh
+sftp_server:
+  ssh: gliderlabs/ssh          # SSH server framework
+  sftp: pkg/sftp               # SFTP protocol impl — ops map to StorageProvider (ADR-006)
+auth:
+  password_hash: golang.org/x/crypto/argon2   # §09 — Argon2 password hashes
+  secret_store: golang.org/x/crypto/nacl      # secretbox — TU_SECRETS_KEY-sealed (§09)
+docker: docker/docker client   # official Engine API SDK — Go-native
+llm:
+  interface: provider-agnostic, opt-in only
+  usage: on-demand screen reading + command suggestion — never hot path
+deploy:
+  shape: single container / single static binary
+  budgets: {idle_mb: 150, per_session_mb: 15, cold_start_s: 3, reconnect_s: 3}
