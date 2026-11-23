@@ -110,7 +110,12 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 		return nil, err
 	}
 	cmd := exec.Command(name, argv...)
-	if rec.Cwd != "" && m.cfg.LocalTargetMode != "nsenter" {
+	if m.cfg.LocalTargetMode != "nsenter" {
+		// Unset cwd defaults to the service user's home, not the daemon's
+		// WorkingDirectory — shells should open where the user lives.
+		if rec.Cwd == "" {
+			rec.Cwd, _ = os.UserHomeDir()
+		}
 		cmd.Dir = rec.Cwd
 	}
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
