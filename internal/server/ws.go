@@ -12,6 +12,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/jedafe/terminu/internal/adapter"
 	"github.com/jedafe/terminu/internal/session"
 )
 
@@ -40,6 +41,52 @@ type errMsg struct {
 	Type    string `json:"type"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// Ref: .teos/conventions/websocket-message-catalog.md — detection frames.
+type stateMsg struct {
+	Type       string `json:"type"`
+	State      string `json:"state"`
+	Kind       string `json:"kind,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	Evidence   string `json:"evidence,omitempty"`
+}
+type promptMsg struct {
+	Type    string                 `json:"type"`
+	Kind    string                 `json:"kind"`
+	Title   string                 `json:"title"`
+	Options []adapter.PromptOption `json:"options"`
+}
+type promptClearMsg struct {
+	Type   string         `json:"type"`
+	Region adapter.Region `json:"region"`
+}
+
+// sendStateFrames maps one detection transition onto the catalog frames:
+// always `state`; `prompt` when a prompt is present; `prompt_clear` when
+// the previously shown prompt is gone. Returns the open-prompt region.
+func sendStateFrames(c *websocket.Conn, u session.StateUpdate, pending *adapter.Region) (*adapter.Region, error) {
+	sm := stateMsg{Type: "state", State: string(u.State)}
+	if u.Match != nil {
+		sm.Kind = string(u.Match.Kind)
+		sm.Confidence = string(u.Match.Confidence)
+		sm.Evidence = u.Match.Evidence
+	}
+	if err := sendCtl(c, sm); err != nil {
+		return pending, err
+	}
+	if u.Match != nil && u.Match.Prompt != nil {
+		pending = &u.Match.Region
+		return pending, sendCtl(c, promptMsg{
+			Type: "prompt", Kind: string(u.Match.Prompt.Kind),
+			Title: u.Match.Prompt.Title, Options: u.Match.Prompt.Options,
+		})
+	}
+	if pending != nil {
+		err := sendCtl(c, promptClearMsg{Type: "prompt_clear", Region: *pending})
+		return nil, err
+	}
+	return pending, nil
 }
 
 func (s *Server) wsSession(w http.ResponseWriter, r *http.Request) {
@@ -96,23 +143,42 @@ func (s *Server) wsSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Resync detection state for late attaches: emit the registry's last
+	// transition (covers a prompt raised while no client was watching).
+	var pending *adapter.Region
+	if pending, err = sendStateFrames(c, sess.CurrentState(), pending); err != nil {
+		return
+	}
+
 	writeDone := make(chan struct{})
 	go func() {
 		defer close(writeDone)
-		for frame := range client.C {
-			wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err := c.Write(wctx, websocket.MessageBinary, frame)
-			cancel()
-			if err != nil {
-				return
+		ups := sess.StateUpdates()
+		for {
+			select {
+			case frame, ok := <-client.C:
+				if !ok {
+					// PTY closed → eof.
+					code := 0
+					if sess.ExitCode() != nil {
+						code = *sess.ExitCode()
+					}
+					_ = sendCtl(c, eofMsg{Type: "eof", ExitCode: code})
+					return
+				}
+				wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				err := c.Write(wctx, websocket.MessageBinary, frame)
+				cancel()
+				if err != nil {
+					return
+				}
+			case u := <-ups:
+				var err error
+				if pending, err = sendStateFrames(c, u, pending); err != nil {
+					return
+				}
 			}
 		}
-		// PTY closed → eof.
-		code := 0
-		if sess.ExitCode() != nil {
-			code = *sess.ExitCode()
-		}
-		_ = sendCtl(c, eofMsg{Type: "eof", ExitCode: code})
 	}()
 
 	for {

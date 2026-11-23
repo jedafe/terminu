@@ -31,7 +31,8 @@ type binding struct {
 	mu      sync.Mutex
 	ad      adapter.Adapter // nil → unadapted (generic tiers run)
 	fg      proc.Info
-	lastKey string // dedup key of last emitted match
+	lastKey string      // dedup key of last emitted match
+	lastUp  StateUpdate // last emitted transition — session sockets resync from it
 }
 
 func newRegistry(m *Manager) *registry {
@@ -121,10 +122,12 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 		return // nothing changed — no write, no emit
 	}
 	b.lastKey = key
+	b.lastUp = StateUpdate{State: st, Match: m}
 	b.mu.Unlock()
 
 	_ = r.m.setState(context.Background(), s.rec.ID, st, string(kind), string(confidence), evidence)
 	s.rec.State = st
+	s.notifyState(b.lastUp)
 
 	// Catalog transition rule: notify on *detected* states — agent.state
 	// feeds the needs-you view (kind only rides waiting-for-input).
@@ -177,4 +180,32 @@ func (r *registry) Bound(id string) (tool string, adapted bool) {
 		return b.ad.Pin().Tool, true
 	}
 	return "", false
+}
+
+// fgName is the last foreground process bound — read before unwatch on
+// exit so agent.state still carries the process name.
+func (r *registry) fgName(id string) string {
+	r.mu.Lock()
+	b, ok := r.bound[id]
+	r.mu.Unlock()
+	if !ok {
+		return ""
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.fg.Name()
+}
+
+// current returns the last emitted transition — session sockets resync
+// from it so a client attaching after detection still sees the prompt.
+func (r *registry) current(id string) StateUpdate {
+	r.mu.Lock()
+	b, ok := r.bound[id]
+	r.mu.Unlock()
+	if !ok {
+		return StateUpdate{}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lastUp
 }

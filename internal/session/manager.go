@@ -191,6 +191,7 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	m.mu.Lock()
 	delete(m.live, s.rec.ID)
 	m.mu.Unlock()
+	fgName := m.reg.fgName(s.rec.ID)
 	m.reg.unwatch(s.rec.ID)
 	ctx := context.Background()
 	st := domain.StateDone
@@ -203,9 +204,10 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	_ = m.setState(ctx, s.rec.ID, st, "", "", "")
 	s.rec.State = st
 	s.rec.ExitCode = &code
+	s.notifyState(StateUpdate{State: st})
 	m.events.Pub(Event{Type: "session.exited", SessionID: s.rec.ID, Session: s.rec})
 	// *→done|error is a catalog notify transition — agent.state carries it.
-	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, State: st})
+	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, Process: fgName, State: st})
 }
 
 // onDetached notes last-detach time; the process keeps running.

@@ -15,6 +15,7 @@ import (
 
 	"github.com/creack/pty"
 
+	"github.com/jedafe/terminu/internal/adapter"
 	"github.com/jedafe/terminu/internal/domain"
 	"github.com/jedafe/terminu/internal/gate"
 	"github.com/jedafe/terminu/internal/proc"
@@ -43,6 +44,17 @@ type ptySession struct {
 	mgr   *Manager
 	scr   *screen.Screen // §06 headless model — fed in readLoop
 	gt    *gate.Gate     // trigger gate — emits scan events on s.done
+
+	stateUp chan StateUpdate // detection transitions → session-WS frames
+}
+
+// StateUpdate is one deduped detection transition for the session socket:
+// State always set; Match is the detection result (nil for a bare
+// working/undetectable transition or process exit).
+// Ref: .teos/conventions/websocket-message-catalog.md (state/prompt/prompt_clear)
+type StateUpdate struct {
+	State domain.SessionState
+	Match *adapter.StateMatch
 }
 
 // spawnArgv builds the child argv per local-target mode (ADR-006).
@@ -157,16 +169,17 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 		return nil, err
 	}
 	s := &ptySession{
-		rec:   rec,
-		cmd:   cmd,
-		ptmx:  ptmx,
-		buf:   newRing(m.cfg.SessionBufferKB * 1024),
-		conns: map[*Client]struct{}{},
-		done:  make(chan struct{}),
-		exit:  make(chan int, 1),
-		mgr:   m,
-		scr:   screen.New(rec.Cols, rec.Rows, m.cfg.ScreenScrollback),
-		gt:    gate.New(time.Duration(m.cfg.QuiescenceMS)*time.Millisecond, m.cfg.ScanBottomRows),
+		rec:     rec,
+		cmd:     cmd,
+		ptmx:    ptmx,
+		buf:     newRing(m.cfg.SessionBufferKB * 1024),
+		conns:   map[*Client]struct{}{},
+		done:    make(chan struct{}),
+		exit:    make(chan int, 1),
+		stateUp: make(chan StateUpdate, 8),
+		mgr:     m,
+		scr:     screen.New(rec.Cols, rec.Rows, m.cfg.ScreenScrollback),
+		gt:      gate.New(time.Duration(m.cfg.QuiescenceMS)*time.Millisecond, m.cfg.ScanBottomRows),
 	}
 	go s.readLoop()
 	go s.waitLoop()
@@ -314,6 +327,28 @@ func (s *ptySession) Screen() *screen.Screen { return s.scr }
 
 // GateEvents exposes the trigger-gate channel for the adapter runner.
 func (s *ptySession) GateEvents() <-chan gate.Event { return s.gt.Events }
+
+// StateUpdates is the session-WS feed of deduped detection transitions.
+func (s *ptySession) StateUpdates() <-chan StateUpdate { return s.stateUp }
+
+// CurrentState is the attach-time resync value for the state/prompt
+// frames: the registry's last transition, else the record's state.
+func (s *ptySession) CurrentState() StateUpdate {
+	if u := s.mgr.reg.current(s.rec.ID); u.State != "" {
+		return u
+	}
+	return StateUpdate{State: s.rec.State}
+}
+
+// notifyState pushes a transition to attached session sockets — never
+// blocks (an overflow drops to the next transition, client resyncs on
+// reattach anyway via the `state` frame cadence).
+func (s *ptySession) notifyState(u StateUpdate) {
+	select {
+	case s.stateUp <- u:
+	default:
+	}
+}
 
 // ExitCode reports the process exit code once EOF has fired.
 func (s *ptySession) ExitCode() *int {
