@@ -34,8 +34,12 @@
 		return seq;
 	}
 
+	// ⏎ sends ^J (\x0a) — the newline TUIs accept for multi-line input
+	// (devin/claude insert a line instead of submitting). Shell readline
+	// treats it as Enter too, so it's harmless there.
 	const keys: { label: string; seq: string; wide?: boolean }[] = [
 		{ label: 'Esc', seq: '\x1b' },
+		{ label: '⏎', seq: '\x0a' },
 		{ label: 'Tab', seq: '\t' },
 		{ label: '↑', seq: '\x1b[A' },
 		{ label: '↓', seq: '\x1b[B' },

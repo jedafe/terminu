@@ -29,12 +29,23 @@
 		prev = v;
 	}
 
+	// Mobile IMEs deliver Enter three different ways: a real keydown,
+	// a beforeinput insertLineBreak (Gboard), or a bare form submit —
+	// each path funnels here, deduped so one press = one \r.
+	let lastEnter = 0;
+	function sendEnter() {
+		const t = Date.now();
+		if (t - lastEnter < 80) return;
+		lastEnter = t;
+		oninject('\r');
+		inp.value = '';
+		prev = '';
+	}
+
 	function onKey(e: KeyboardEvent) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			oninject('\r');
-			inp.value = '';
-			prev = '';
+			sendEnter();
 		} else if (e.key === 'Backspace' && inp.value === '') {
 			e.preventDefault();
 			oninject('\x7f'); // field is empty but the PTY line isn't
@@ -46,14 +57,28 @@
 			oninject('\x1b');
 		}
 	}
+
+	function onBeforeInput(e: InputEvent) {
+		if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+			e.preventDefault();
+			sendEnter();
+		}
+	}
 </script>
 
-<div class="iline">
+<form
+	class="iline"
+	onsubmit={(e) => {
+		e.preventDefault();
+		sendEnter();
+	}}
+>
 	<input
 		bind:this={inp}
 		class="iin"
 		oninput={onInput}
 		onkeydown={onKey}
+		onbeforeinput={onBeforeInput}
 		placeholder="type — sends to session"
 		autocapitalize="off"
 		autocorrect="off"
@@ -63,19 +88,21 @@
 	/>
 	{#if onclose}
 		<button
+			type="button"
 			class="ix"
 			aria-label="hide keyboard bar"
 			onpointerdown={(e) => e.preventDefault()}
 			onclick={onclose}>✕</button
 		>
 	{/if}
-</div>
+</form>
 
 <style>
-	.iline {
+	form.iline {
 		display: flex;
 		gap: 6px;
 		padding: 6px 8px;
+		margin: 0;
 		background: #0d1117;
 		border-top: 1px solid #1a2334;
 		flex-shrink: 0;

@@ -31,8 +31,19 @@
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
 	let now = $state(Date.now());
 	let kbdOpen = $state(false);
+	// The shell tracks the *visual* viewport, not 100dvh: on mobile the
+	// keyboard shrinks the visual viewport without always resizing the
+	// layout one (iOS), and without this the keybar sits under the
+	// keyboard. offsetTop folds in any pan the browser does to keep the
+	// focused field visible.
+	let shellH = $state(0);
 
 	onMount(() => {
+		const vv = window.visualViewport;
+		const syncVV = () => (shellH = vv ? vv.height + vv.offsetTop : 0);
+		syncVV();
+		vv?.addEventListener('resize', syncVV);
+		vv?.addEventListener('scroll', syncVV);
 		const tick = setInterval(() => (now = Date.now()), 15000);
 		void (async () => {
 			await refreshSessions();
@@ -46,7 +57,11 @@
 				else await spawn();
 			}
 		})();
-		return () => clearInterval(tick);
+		return () => {
+			clearInterval(tick);
+			vv?.removeEventListener('resize', syncVV);
+			vv?.removeEventListener('scroll', syncVV);
+		};
 	});
 
 	function isLive(s: Session) {
@@ -181,7 +196,7 @@
 	}
 </script>
 
-<div class="shell">
+<div class="shell" style:height={shellH > 0 ? `${shellH}px` : undefined}>
 	<!-- top bar: sessions drawer + panes + mode toggle -->
 	<header class="topbar">
 		<button class="tb" aria-label="sessions" onclick={() => drawerOpen.update((v) => !v)}>
