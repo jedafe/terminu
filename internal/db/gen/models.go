@@ -8,6 +8,18 @@ import (
 	"database/sql"
 )
 
+type Alert struct {
+	ID         int64          `json:"id"`
+	SessionID  string         `json:"session_id"`
+	Level      string         `json:"level"`
+	Transition string         `json:"transition"`
+	Process    string         `json:"process"`
+	Kind       sql.NullString `json:"kind"`
+	Confidence sql.NullString `json:"confidence"`
+	AckedAt    sql.NullString `json:"acked_at"`
+	At         string         `json:"at"`
+}
+
 type AuditLog struct {
 	ID      int64         `json:"id"`
 	Actor   string        `json:"actor"`

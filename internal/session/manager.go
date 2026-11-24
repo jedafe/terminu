@@ -314,9 +314,29 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	// *→done|error is a catalog notify transition — agent.state carries it.
 	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, Process: fgName, State: st})
 	if st == domain.StateDone || st == domain.StateError {
-		m.events.Pub(Event{Type: "alert", SessionID: s.rec.ID,
-			Level: alertLevel(st), Transition: transition(prevSt, st)})
+		m.alert(s.rec.ID, fgName, prevSt, st, "", "")
 	}
+}
+
+// alert emits the catalog `alert` frame AND persists the ack-able row —
+// §05: the WS frame is the live edge, the alerts table is its history.
+// Callers pre-guard on the notify set (waiting|done|error).
+func (m *Manager) alert(sessionID, process string, prev, st domain.SessionState, kind domain.WaitKind, conf domain.Confidence) {
+	lvl := alertLevel(st)
+	tr := transition(prev, st)
+	null := func(s string) sql.NullString {
+		if s == "" {
+			return sql.NullString{}
+		}
+		return sql.NullString{String: s, Valid: true}
+	}
+	if err := m.q.CreateAlert(context.Background(), gen.CreateAlertParams{
+		SessionID: sessionID, Level: lvl, Transition: tr,
+		Process: process, Kind: null(string(kind)), Confidence: null(string(conf)),
+	}); err != nil {
+		slog.Warn("alert insert", "session", sessionID, "err", err)
+	}
+	m.events.Pub(Event{Type: "alert", SessionID: sessionID, Level: lvl, Transition: tr})
 }
 
 // AgentView is one row of GET /api/agents — the needs-you surface:

@@ -42,7 +42,9 @@ export const api = {
 	putWorkspace: (id: number, w: { name: string; layout: string; last_open_session?: string }) =>
 		req(`/api/workspaces/${id}`, { method: 'PUT', body: JSON.stringify(w) }),
 	agents: () => req<AgentView[]>('/api/agents'),
-	agentPrompt: (id: string) => req<AgentPrompt>(`/api/agents/${id}/prompt`)
+	agentPrompt: (id: string) => req<AgentPrompt>(`/api/agents/${id}/prompt`),
+	alerts: () => req<Alert[]>('/api/alerts'),
+	ackAlert: (id: number) => req(`/api/alerts/${id}/ack`, { method: 'POST' })
 };
 
 export interface Session {
@@ -108,4 +110,17 @@ export interface Keystroke {
 	char?: number;
 	text?: string;
 	arrows?: number;
+}
+
+// §05 ack-able alert row — unacknowledged sort first server-side.
+export interface Alert {
+	id: number;
+	session_id: string;
+	level: string;
+	transition: string;
+	process?: string;
+	kind?: string;
+	confidence?: string;
+	acked_at?: string;
+	at: string;
 }

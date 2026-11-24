@@ -1,6 +1,6 @@
 // App state: session registry + pane layout (views over sessions).
 import { writable, derived, get } from 'svelte/store';
-import { api, type Session, type Workspace } from './api';
+import { api, type Alert, type Session, type Workspace } from './api';
 import { subscribeEvents } from './ws';
 
 export const sessions = writable<Session[]>([]);
@@ -17,6 +17,17 @@ export interface AgentInfo {
 	since?: string;
 }
 export const agentStates = writable<Record<string, AgentInfo>>({});
+
+// §05 ack-able alert history — refreshed on `alert` events and drawer
+// opens; only unacknowledged rows surface in the UI.
+export const alerts = writable<Alert[]>([]);
+export async function refreshAlerts() {
+	alerts.set(await api.alerts().catch(() => []));
+}
+export async function ackAlert(id: number) {
+	await api.ackAlert(id).catch(() => {});
+	alerts.update((list) => list.filter((a) => a.id !== id));
+}
 
 // §05 ordering: waiting-for-input (high conf, then oldest wait), then
 // working-ish, then done/error recent — mirrors the server's Agents().
@@ -155,6 +166,10 @@ export function wireEvents() {
 			});
 			return; // state change alone doesn't need a session refetch
 		}
+		if (e.type === 'alert') {
+			void refreshAlerts();
+			return; // alert frames don't change the session rows
+		}
 		void refreshSessions().then(() => {
 			// Prune dead ids + re-sync ordering fields (agent.state events
 			// can drop under load — the agents view is the source of truth).
@@ -172,6 +187,7 @@ export function wireEvents() {
 		() => {
 			void refreshSessions().catch(() => {});
 			void refreshAgents().catch(() => {});
+			void refreshAlerts().catch(() => {});
 		}
 	);
 }

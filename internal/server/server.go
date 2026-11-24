@@ -118,6 +118,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/sessions/{id}/scrollback", s.requireAuth(s.scrollback))
 	s.mux.HandleFunc("GET /api/agents", s.requireAuth(s.listAgents))
 	s.mux.HandleFunc("GET /api/agents/{id}/prompt", s.requireAuth(s.agentPrompt))
+	s.mux.HandleFunc("GET /api/alerts", s.requireAuth(s.listAlerts))
+	s.mux.HandleFunc("POST /api/alerts/{id}/ack", s.requireAuth(s.ackAlert))
 	s.mux.HandleFunc("GET /api/workspaces", s.requireAuth(s.listWorkspaces))
 	s.mux.HandleFunc("PUT /api/workspaces/{id}", s.requireAuth(s.putWorkspace))
 	s.mux.HandleFunc("GET /api/audit", s.requireRole("admin", s.listAudit))
@@ -549,6 +551,56 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, rows)
+}
+
+// ---------- alerts ----------
+
+// alertOut is the API shape of one alerts row — sql.Null* fields
+// flattened to strings/omitted for the client.
+type alertOut struct {
+	ID         int64  `json:"id"`
+	SessionID  string `json:"session_id"`
+	Level      string `json:"level"`
+	Transition string `json:"transition"`
+	Process    string `json:"process,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	AckedAt    string `json:"acked_at,omitempty"`
+	At         string `json:"at"`
+}
+
+// listAlerts is GET /api/alerts — unacknowledged first, newest first.
+func (s *Server) listAlerts(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.q.ListAlerts(r.Context(), 200)
+	if err != nil {
+		s.internalErr(w, err)
+		return
+	}
+	out := make([]alertOut, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, alertOut{
+			ID: a.ID, SessionID: a.SessionID, Level: a.Level,
+			Transition: a.Transition, Process: a.Process,
+			Kind: a.Kind.String, Confidence: a.Confidence.String,
+			AckedAt: a.AckedAt.String, At: a.At,
+		})
+	}
+	writeJSON(w, 200, out)
+}
+
+// ackAlert is POST /api/alerts/{id}/ack — idempotent UI state, not a
+// broker action (no privileged execution happens).
+func (s *Server) ackAlert(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, 400, "bad_request", "alert id must be numeric")
+		return
+	}
+	if err := s.q.AckAlert(r.Context(), id); err != nil {
+		s.internalErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
 }
 
 func nullString(v string) sql.NullString {

@@ -147,12 +147,7 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 			Kind:       kind,
 			Confidence: confidence,
 		})
-		r.m.events.Pub(Event{
-			Type:       "alert",
-			SessionID:  s.rec.ID,
-			Level:      alertLevel(st),
-			Transition: transition(prev, st),
-		})
+		r.m.alert(s.rec.ID, fg.Name(), prev, st, kind, confidence)
 	}
 }
 

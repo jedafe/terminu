@@ -18,7 +18,10 @@
 		drawerOpen,
 		touchMode,
 		orderedSessions,
-		agentStates
+		agentStates,
+		alerts,
+		refreshAlerts,
+		ackAlert
 	} from '$lib/stores';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
@@ -34,6 +37,7 @@
 		void (async () => {
 			await refreshSessions();
 			await refreshAgents();
+			await refreshAlerts();
 			await restoreWorkspace();
 			wireEvents();
 			if ($panes.length === 0) {
@@ -221,8 +225,9 @@
 		</button>
 	</header>
 
-	<!-- session drawer: grouped needs-you / running / finished -->
+	<!-- session drawer: alerts, then grouped needs-you / running / finished -->
 	{#if $drawerOpen}
+		{@const unacked = $alerts.filter((a) => !a.acked_at)}
 		{@const needs = $orderedSessions.filter(needsYou)}
 		{@const running = $orderedSessions.filter((s) => isLive(s) && !needsYou(s))}
 		{@const finished = $orderedSessions.filter(isFinished)}
@@ -231,6 +236,20 @@
 				<span>sessions</span>
 				<button class="tb" onclick={spawn}>+ new</button>
 			</div>
+
+			{#if unacked.length > 0}
+				<div class="ghead"><span>alerts</span></div>
+				{#each unacked as a (a.id)}
+					<div class="arow">
+						<span class="dot" class:live={a.level === 'action'} class:dead={a.level === 'warn'} class:needs={a.level === 'action'}></span>
+						<span class="smain">
+							<span class="sname">{a.transition}</span>
+							<span class="ssub">{a.process || a.session_id} · {fmtAgo(a.at)}</span>
+						</span>
+						<button class="sact hist" title="acknowledge alert" onclick={(e) => { e.stopPropagation(); void ackAlert(a.id); }}>ack</button>
+					</div>
+				{/each}
+			{/if}
 
 			{#if needs.length > 0}
 				<div class="ghead">needs you</div>
@@ -429,7 +448,8 @@
 		font: 12px ui-monospace, monospace;
 		letter-spacing: 0.15em;
 	}
-	.srow {
+	.srow,
+	.arow {
 		display: flex;
 		align-items: center;
 		gap: 10px;
