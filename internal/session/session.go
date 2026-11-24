@@ -446,13 +446,6 @@ func (s *ptySession) setDetachedAt(t time.Time) {
 	s.mu.Unlock()
 }
 
-// clearDetached resets the stamp when a client attaches again.
-func (s *ptySession) clearDetached() {
-	s.mu.Lock()
-	s.rec.DetachedAt = nil
-	s.mu.Unlock()
-}
-
 // persistScrollback writes the retained output tail to
 // {data_dir}/scrollback/{id} — the read-only replay source for finished
 // rows (GET scrollback + dead-session WS attach). Runs at read end so it
