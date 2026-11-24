@@ -224,6 +224,15 @@
 			lpTimer = setTimeout(lpFire, LP_MS);
 			armPull(e);
 		});
+		// Same scroll-claim guard as the shell: while a pull is armed,
+		// cancel the browser's claim or the drag dies as pointercancel.
+		el.addEventListener(
+			'touchmove',
+			(e) => {
+				if (pullStart >= 0 && e.cancelable) e.preventDefault();
+			},
+			{ passive: false }
+		);
 		el.addEventListener('pointermove', (e) => {
 			if (lpPt && Math.hypot(e.clientX - lpPt.x, e.clientY - lpPt.y) > LP_MOVE) cancelLp();
 			if (pullStart >= 0) {

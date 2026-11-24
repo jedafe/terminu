@@ -50,6 +50,7 @@
 	let pullStart = -1;
 	let pull = $state(0);
 	let ptrBusy = $state(false);
+	let shellEl: HTMLDivElement;
 
 	function ptrDown(e: PointerEvent) {
 		if (e.pointerType !== 'touch' || ptrBusy) return;
@@ -62,8 +63,12 @@
 	function ptrMove(e: PointerEvent) {
 		if (pullStart < 0) return;
 		const dy = e.clientY - pullStart;
-		if (dy > 6) pull = Math.min(PTR_MAX, dy);
-		else if (pull) pull = 0;
+		if (dy < -6) {
+			pullStart = -1; // reversed — hand the gesture back to scrolling
+			pull = 0;
+			return;
+		}
+		pull = dy > 6 ? Math.min(PTR_MAX, dy) : 0;
 	}
 	function ptrEnd() {
 		if (pullStart < 0) return;
@@ -107,6 +112,14 @@
 		syncVV();
 		vv?.addEventListener('resize', syncVV);
 		vv?.addEventListener('scroll', syncVV);
+		// Pull guard: while a pull is armed, cancel the browser's scroll
+		// claim on the gesture — otherwise it steals the drag and fires
+		// pointercancel before the threshold. passive:false is required
+		// for preventDefault to work.
+		const guard = (e: TouchEvent) => {
+			if (pullStart >= 0 && e.cancelable) e.preventDefault();
+		};
+		shellEl.addEventListener('touchmove', guard, { passive: false });
 		const tick = setInterval(() => (now = Date.now()), 15000);
 		void (async () => {
 			await refreshSessions();
@@ -122,6 +135,7 @@
 		})();
 		return () => {
 			clearInterval(tick);
+			shellEl.removeEventListener('touchmove', guard);
 			vv?.removeEventListener('resize', syncVV);
 			vv?.removeEventListener('scroll', syncVV);
 		};
@@ -261,6 +275,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions — gesture layer, not keyboard -->
 <div
+	bind:this={shellEl}
 	class="shell"
 	style:height={shellH > 0 ? `${shellH}px` : undefined}
 	onpointerdown={ptrDown}
