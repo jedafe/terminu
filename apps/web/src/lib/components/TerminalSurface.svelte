@@ -259,10 +259,12 @@
 		client?.send(seq);
 	}
 
-	// Called by KeyBar — same path as physical input.
+	// Called by KeyBar — same path as physical input. On touch devices the
+	// InputLine owns the OS keyboard: focusing xterm's hidden textarea
+	// would blur it and drop the keyboard after every keybar press.
 	export function inject(seq: string) {
 		client?.send(seq);
-		term?.focus();
+		if (matchMedia('(hover: hover)').matches) term?.focus();
 	}
 
 	export function pasteText(t: string) {
@@ -383,6 +385,9 @@
 		position: absolute;
 		inset: 0;
 		padding: 4px 6px;
+		/* Caps the subtree: xterm's canvases carry their own z-indexes and
+		   would otherwise stack above the sibling overlays below. */
+		z-index: 0;
 	}
 	.inactive .term {
 		opacity: 0.92;
@@ -392,8 +397,17 @@
 		-webkit-user-select: text;
 		user-select: text;
 	}
+	/* xterm's native viewport scrollbar is a hover-cursor affordance —
+	   hide it; wheel/drag scrolling is unchanged. */
+	.tsurface :global(.xterm-viewport) {
+		scrollbar-width: none;
+	}
+	.tsurface :global(.xterm-viewport::-webkit-scrollbar) {
+		display: none;
+	}
 	.banner {
 		position: absolute;
+		z-index: 1;
 		top: 8px;
 		right: 8px;
 		background: #4a3419;
@@ -409,6 +423,7 @@
 	}
 	.toast {
 		position: absolute;
+		z-index: 1;
 		bottom: 12px;
 		left: 50%;
 		transform: translateX(-50%);
@@ -422,6 +437,7 @@
 	/* §05 prompt overlay — touch-first action row above the term */
 	.poverlay {
 		position: absolute;
+		z-index: 1;
 		bottom: 10px;
 		left: 50%;
 		transform: translateX(-50%);
@@ -498,6 +514,7 @@
 	}
 	.maybe {
 		position: absolute;
+		z-index: 1;
 		bottom: 10px;
 		left: 50%;
 		transform: translateX(-50%);
@@ -511,6 +528,7 @@
 	}
 	.tools {
 		position: absolute;
+		z-index: 1;
 		top: 6px;
 		right: 6px;
 		display: flex;

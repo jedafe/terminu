@@ -92,6 +92,13 @@
 	.keybar::-webkit-scrollbar {
 		display: none;
 	}
+	/* The keybar is a touch affordance — a mouse-primary device has a
+	   physical keyboard for everything on it. */
+	@media (pointer: fine) {
+		.keybar {
+			display: none;
+		}
+	}
 	.k {
 		min-width: 44px;
 		min-height: 44px;

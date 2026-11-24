@@ -30,7 +30,11 @@
 	let surfaces: Record<string, TerminalSurface | undefined> = {};
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
 	let now = $state(Date.now());
-	let kbdOpen = $state(false);
+	// Touch-first devices start with the input line open — the on-screen
+	// surface is their only typing path.
+	let kbdOpen = $state(
+		typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
+	);
 	// The shell tracks the *visual* viewport, not 100dvh: on mobile the
 	// keyboard shrinks the visual viewport without always resizing the
 	// layout one (iOS), and without this the keybar sits under the
