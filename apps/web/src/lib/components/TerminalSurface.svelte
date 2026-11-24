@@ -14,8 +14,16 @@
 	let {
 		sessionId,
 		active = false,
-		onrequestinput
-	}: { sessionId: string; active?: boolean; onrequestinput?: () => void } = $props();
+		onrequestinput,
+		onpull,
+		onpullrelease
+	}: {
+		sessionId: string;
+		active?: boolean;
+		onrequestinput?: () => void;
+		onpull?: (dy: number) => void;
+		onpullrelease?: (dy: number) => void;
+	} = $props();
 
 	let el: HTMLDivElement;
 	let term: Terminal;
@@ -195,23 +203,52 @@
 		onrequestinput?.();
 	}
 
+	// Pull-to-refresh inside the terminal: armed only when the viewport
+	// already sits at the oldest scrollback line AND no TUI holds the
+	// mouse — otherwise the drag keeps its normal job (scroll/TUI wheel).
+	let pullStart = -1;
+	function armPull(e: PointerEvent) {
+		pullStart = -1;
+		if (!onpull && !onpullrelease) return;
+		if (e.pointerType !== 'touch') return;
+		if ((term?.modes?.mouseTrackingMode ?? 'none') !== 'none') return;
+		if (term.buffer.active.viewportY !== 0) return;
+		pullStart = e.clientY;
+	}
+
 	function armTouchLayer() {
 		el.addEventListener('pointerdown', (e) => {
 			if (e.pointerType !== 'touch') return;
 			lpPt = { x: e.clientX, y: e.clientY };
 			lpAt = Date.now();
 			lpTimer = setTimeout(lpFire, LP_MS);
+			armPull(e);
 		});
 		el.addEventListener('pointermove', (e) => {
 			if (lpPt && Math.hypot(e.clientX - lpPt.x, e.clientY - lpPt.y) > LP_MOVE) cancelLp();
+			if (pullStart >= 0) {
+				const dy = e.clientY - pullStart;
+				if (dy < -6) pullStart = -1; // reversed → normal gesture
+				else onpull?.(dy > 0 ? dy : 0);
+			}
 		});
 		// lpPt surviving to pointerup = press shorter than LP_MS with no
 		// move (long-press and scroll both clear it first).
 		el.addEventListener('pointerup', (e) => {
 			if (e.pointerType === 'touch' && lpPt && Date.now() - lpAt < LP_MS) tap();
+			if (pullStart >= 0) {
+				onpullrelease?.(e.clientY - pullStart);
+				pullStart = -1;
+			}
 			cancelLp();
 		});
-		el.addEventListener('pointercancel', cancelLp);
+		el.addEventListener('pointercancel', () => {
+			if (pullStart >= 0) {
+				onpullrelease?.(0);
+				pullStart = -1;
+			}
+			cancelLp();
+		});
 
 		el.addEventListener('contextmenu', (e) => {
 			e.preventDefault();

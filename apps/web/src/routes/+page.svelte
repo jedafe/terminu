@@ -73,12 +73,27 @@
 			return;
 		}
 		pull = 0;
+		fireRefresh();
+	}
+
+	function fireRefresh() {
 		ptrBusy = true;
 		void (async () => {
 			await refreshSessions();
 			await Promise.allSettled([refreshAgents(), refreshAlerts()]);
 			ptrBusy = false;
 		})();
+	}
+
+	// Terminal-area pulls arrive as raw drag deltas — same indicator,
+	// same threshold.
+	function termPull(dy: number) {
+		if (!ptrBusy && dy > 6) pull = Math.min(PTR_MAX, dy);
+	}
+	function termPullEnd(dy: number) {
+		const go = pull >= PTR_TRIP || dy >= PTR_TRIP;
+		pull = 0;
+		if (go) fireRefresh();
 	}
 
 	onMount(() => {
@@ -377,6 +392,8 @@
 						sessionId={p.sessionId}
 						active={$activePane === p.id}
 						onrequestinput={() => (kbdOpen = true)}
+						onpull={termPull}
+						onpullrelease={termPullEnd}
 					/>
 				</div>
 			</section>

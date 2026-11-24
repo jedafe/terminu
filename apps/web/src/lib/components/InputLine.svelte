@@ -11,6 +11,8 @@
 
 	let inp: HTMLInputElement;
 	let prev = '';
+	let focused = $state(false);
+	let hasText = $state(false);
 
 	onMount(() => {
 		inp.focus();
@@ -62,6 +64,7 @@
 			}
 		}
 		prev = v;
+		hasText = v !== '';
 	}
 
 	// Mobile IMEs deliver Enter three different ways: a real keydown,
@@ -108,6 +111,12 @@
 		sendEnter();
 	}}
 >
+	{#if !focused && !hasText}
+		<!-- fake block cursor: a real caret needs focus, which mobile
+		     browsers won't grant without a gesture — this marks the
+		     typing surface until the first touch lands it -->
+		<span class="fakecaret" aria-hidden="true"></span>
+	{/if}
 	<input
 		bind:this={inp}
 		class="iin"
@@ -120,6 +129,8 @@
 		autocomplete="off"
 		spellcheck="false"
 		enterkeyhint="send"
+		onfocus={() => (focused = true)}
+		onblur={() => (focused = false)}
 	/>
 	{#if onclose}
 		<button
@@ -134,6 +145,7 @@
 
 <style>
 	form.iline {
+		position: relative;
 		display: flex;
 		gap: 6px;
 		padding: 6px 8px;
@@ -149,8 +161,25 @@
 		border-radius: 9px;
 		background: #11161f;
 		color: #e6e6e6;
-		padding: 0 12px;
+		padding: 0 12px 0 24px; /* left room for the fake caret */
 		font: 15px ui-monospace, monospace;
+	}
+	.fakecaret {
+		position: absolute;
+		left: 17px;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 9px;
+		height: 19px;
+		background: #4cc9f0;
+		border-radius: 1px;
+		pointer-events: none;
+		animation: caretblink 1.1s step-end infinite;
+	}
+	@keyframes caretblink {
+		50% {
+			opacity: 0;
+		}
 	}
 	.iin:focus {
 		outline: none;
