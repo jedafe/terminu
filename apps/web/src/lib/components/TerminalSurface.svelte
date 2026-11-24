@@ -16,13 +16,15 @@
 		active = false,
 		onrequestinput,
 		onpull,
-		onpullrelease
+		onpullrelease,
+		onpaste
 	}: {
 		sessionId: string;
 		active?: boolean;
 		onrequestinput?: () => void;
 		onpull?: (dy: number) => void;
 		onpullrelease?: (dy: number) => void;
+		onpaste?: () => void;
 	} = $props();
 
 	let el: HTMLDivElement;
@@ -132,9 +134,10 @@
 	});
 
 	// --- touch layer (§02/§11): the pointer contract on mobile ---
-	// mouse mode: xterm's native path — taps report to the TUI when it
-	//   holds the mouse; long-press or contextmenu re-dispatches a
-	//   right-button tap so the TUI sees a real right click.
+	// mouse mode + TUI holding the mouse: taps/long-press/contextmenu
+	//   re-dispatch real button reports the TUI understands.
+	// no TUI listening (plain shell): right-click → paste (PuTTY
+	//   convention), long-press → copy line — always visible feedback.
 	// select mode: primary mousedown is re-dispatched shift-modified —
 	//   xterm then takes its built-in forced-selection path (the desktop
 	//   Shift+drag escape) even while a TUI owns the mouse. On touch,
@@ -145,7 +148,9 @@
 	let lpTimer: ReturnType<typeof setTimeout> | undefined;
 	let lpPt: { x: number; y: number } | null = null;
 	let lpAt = 0;
-	let lastRightClick = 0;
+	let lastGesture = 0;
+
+	const tuiMouse = () => (term?.modes?.mouseTrackingMode ?? 'none') !== 'none';
 
 	function cancelLp() {
 		if (lpTimer) clearTimeout(lpTimer);
@@ -166,7 +171,7 @@
 			(ev as unknown as { __tsynth: boolean }).__tsynth = true;
 			t.dispatchEvent(ev);
 		}
-		lastRightClick = Date.now();
+		lastGesture = Date.now();
 	}
 
 	// Map a viewport Y to a buffer row for select-mode line grabs.
@@ -182,7 +187,8 @@
 		const p = lpPt;
 		cancelLp();
 		if (!p) return;
-		if (get(touchMode) === 'mouse') {
+		lastGesture = Date.now(); // dedupes Android's contextmenu echo
+		if (get(touchMode) === 'mouse' && tuiMouse()) {
 			rightClickAt(p.x, p.y);
 			return;
 		}
@@ -267,9 +273,9 @@
 			e.preventDefault();
 			// Android fires contextmenu for the same long-press lpFire already
 			// handled — the window dedupes; desktop right-clicks pass through.
-			if (get(touchMode) === 'mouse' && Date.now() - lastRightClick > 600) {
-				rightClickAt(e.clientX, e.clientY);
-			}
+			if (Date.now() - lastGesture < 600) return;
+			if (get(touchMode) === 'mouse' && tuiMouse()) rightClickAt(e.clientX, e.clientY);
+			else onpaste?.(); // shell isn't listening → paste, not silence
 		});
 
 		// Capture beats xterm's own bubble listener: the real press never

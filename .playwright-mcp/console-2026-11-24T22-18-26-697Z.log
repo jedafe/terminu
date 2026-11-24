@@ -1,0 +1,6 @@
+[     164ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:7700/api/auth/me:1
+[     192ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:7700/api/sessions:1
+[     255ms] la: authentication required
+    at Ct (http://127.0.0.1:7700/_app/immutable/bundle.DE1Pkm6t.js:3:45138)
+    at async gr (http://127.0.0.1:7700/_app/immutable/bundle.DE1Pkm6t.js:3:50574)
+    at async http://127.0.0.1:7700/_app/immutable/bundle.DE1Pkm6t.js:30:14564

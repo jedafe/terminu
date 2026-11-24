@@ -1,0 +1,8 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e5]: terminu
+    - generic [ref=e6]: control room for your agents
+    - textbox "username" [ref=e7]
+    - textbox "password" [ref=e8]
+    - button "sign in" [ref=e9] [cursor=pointer]
+  - generic [ref=e10]: terminu

@@ -261,13 +261,10 @@
 		if (ap) surfaces[ap]?.send(seq);
 	}
 
-	async function paste() {
+	async function paste(paneId?: string) {
 		try {
 			const t = await navigator.clipboard.readText();
-			if (t) {
-				const ap = $activePane;
-				if (ap) surfaces[ap]?.pasteText(t);
-			}
+			if (t) surfaces[paneId ?? $activePane ?? '']?.pasteText(t);
 		} catch {
 			/* clipboard perm denied */
 		}
@@ -424,6 +421,7 @@
 						onrequestinput={() => (kbdOpen = true)}
 						onpull={termPull}
 						onpullrelease={termPullEnd}
+						onpaste={() => paste(p.id)}
 					/>
 				</div>
 			</section>
@@ -446,7 +444,7 @@
 	{/if}
 	<KeyBar
 		oninject={inject}
-		onpaste={paste}
+		onpaste={() => paste()}
 		ontogglekbd={() => {
 			if (coarsePtr()) {
 				kbdArmed = !kbdArmed;
