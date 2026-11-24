@@ -1,7 +1,7 @@
 // Ref: .teos/conventions/websocket-message-catalog.md
 // Session socket: attach{last_seq} → replayed data frames → hello{next_seq}
 // → binary data frames (8-byte seq prefix + payload) / input / resize /
-// detach / eof / error. Every control frame carries `t` per the catalog.
+// detach / eof / error. Every control frame carries `type` per the catalog.
 package server
 
 import (
@@ -129,7 +129,11 @@ func (s *Server) wsSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer c.CloseNow()
-	c.SetReadLimit(int64(s.cfg.WSMaxFrameKB) * 1024)
+	// A zero/negative cap must not become a zero-byte limit — the lib's
+	// 32KB default is the sane fallback for an unset config.
+	if kb := s.cfg.WSMaxFrameKB; kb > 0 {
+		c.SetReadLimit(int64(kb) * 1024)
+	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
@@ -244,7 +248,7 @@ func (s *Server) wsSession(w http.ResponseWriter, r *http.Request) {
 		}
 		switch m.Type {
 		case "input":
-			// JSON input variant: {t:"input", data:"..."} — reserved.
+			// JSON input variant: {type:"input", data:"..."} — reserved.
 		case "resize":
 			// Same bounds as spawn — the screen model allocates
 			// cols×rows cells on resize too.
@@ -294,19 +298,14 @@ func (s *Server) wsDead(w http.ResponseWriter, r *http.Request, rec *domain.Sess
 		_ = sendCtl(c, errMsg{Type: "error", Code: "internal", Message: "scrollback read failed"})
 		return
 	}
-	// Split the file into seq'd frames; hello.next_seq = one past the
-	// last replayed frame so the client's dedup boundary is consistent.
-	n := (len(data) + 32767) / 32768
-	if err := sendCtl(c, helloMsg{
-		Type: "hello", SessionID: rec.ID,
-		Cols: rec.Cols, Rows: rec.Rows,
-		State: string(rec.State), NextSeq: uint64(n + 1),
-	}); err != nil {
-		return
-	}
+	// Split the file into seq'd frames — 30KB payloads stay under client
+	// read limits (the 8-byte seq prefix rides inside the frame). Catalog
+	// order: replayed data first, then hello; next_seq = one past the
+	// last frame so the dedup boundary holds.
+	n := (len(data) + 30719) / 30720
 	seq := uint64(0)
-	for i := 0; i < len(data); i += 32768 {
-		end := i + 32768
+	for i := 0; i < len(data); i += 30720 {
+		end := i + 30720
 		if end > len(data) {
 			end = len(data)
 		}
@@ -317,6 +316,13 @@ func (s *Server) wsDead(w http.ResponseWriter, r *http.Request, rec *domain.Sess
 		if err := c.Write(ctx, websocket.MessageBinary, frame); err != nil {
 			return
 		}
+	}
+	if err := sendCtl(c, helloMsg{
+		Type: "hello", SessionID: rec.ID,
+		Cols: rec.Cols, Rows: rec.Rows,
+		State: string(rec.State), NextSeq: uint64(n + 1),
+	}); err != nil {
+		return
 	}
 	code := 0
 	if rec.ExitCode != nil {

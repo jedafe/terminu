@@ -8,12 +8,13 @@ import (
 	"github.com/jedafe/terminu/internal/domain"
 )
 
-// Event is one /ws/events broadcast frame — every frame carries `t`
-// per the websocket-message-catalog. Lifecycle events ride
-// SessionID/Session; agent.state carries the detection fields; alert
-// carries Level + Transition.
+// Event is one /ws/events broadcast frame — every frame carries `type`
+// (the websocket-message-catalog registers the field name; the session
+// socket uses the same tag). Lifecycle events ride SessionID/Session;
+// agent.state carries the detection fields; alert carries Level +
+// Transition.
 type Event struct {
-	Type      string          `json:"t"`
+	Type      string          `json:"type"`
 	SessionID string          `json:"session_id,omitempty"`
 	Session   *domain.Session `json:"session,omitempty"`
 

@@ -1,0 +1,4 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1700000001, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "aider v0.70.0\r\n"]
+[0.120, "o", "tokens: 4.2k\r\n"]
+[0.200, "o", "Add file to the chat? (Y)es/(N)o/(D)on't ask again"]

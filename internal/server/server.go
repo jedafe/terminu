@@ -481,7 +481,7 @@ func (s *Server) purgeLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, 500, "internal", err.Error())
+		s.internalErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})

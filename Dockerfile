@@ -21,13 +21,19 @@ RUN CGO_ENABLED=0 go build -ldflags='-s -w' -o /out/terminu-server ./cmd/terminu
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends util-linux ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin terminu \
+    && mkdir -p /data && chown terminu:terminu /data
 COPY --from=go /out/terminu-server /usr/local/bin/terminu-server
+# §12: default `container` — least privilege; the process runs unprivileged.
+# Host access (ADR-006) is opt-in at deploy time:
+#   nsenter → docker run --user root --privileged --pid host \
+#               -e TU_LOCAL_TARGET_MODE=nsenter -e TU_HOST_USER=<user>
 ENV TU_PORT=7700 \
     TU_BIND=0.0.0.0 \
     TU_DATA_DIR=/data \
-    TU_LOCAL_TARGET_MODE=nsenter \
-    TU_HOST_USER=japa
+    TU_LOCAL_TARGET_MODE=container
+USER terminu
 VOLUME /data
 EXPOSE 7700
 ENTRYPOINT ["terminu-server"]

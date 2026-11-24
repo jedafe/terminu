@@ -131,14 +131,17 @@ func TestWsDeadAttach(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
+	// Wait for the process reap — detection can write done/error to the
+	// row while the PTY is still live, so the live map (not the DB) is
+	// the truth for "the PTY is gone".
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		row, _ := mgr.Get(ctx, rec.ID)
-		if row != nil && session.IsFinished(row.State) {
+		if _, err := mgr.Attach(rec.ID); err != nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("session did not finish: %+v", row)
+			row, _ := mgr.Get(ctx, rec.ID)
+			t.Fatalf("still live: db=%s", row.State)
 		}
 		time.Sleep(25 * time.Millisecond)
 	}

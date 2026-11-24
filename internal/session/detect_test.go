@@ -29,14 +29,15 @@ func TestDetectionFeed(t *testing.T) {
 		t.Fatalf("pty start: %v", err)
 	}
 	s := &ptySession{
-		rec:   &domain.Session{ID: "t", Cols: 80, Rows: 24},
-		cmd:   cmd,
-		ptmx:  ptmx,
-		buf:   newRing(1 << 20),
-		conns: map[*Client]struct{}{},
-		done:  make(chan struct{}),
-		scr:   screen.New(80, 24, 0),
-		gt:    gate.New(60*time.Millisecond, 12),
+		rec:      &domain.Session{ID: "t", Cols: 80, Rows: 24},
+		cmd:      cmd,
+		ptmx:     ptmx,
+		buf:      newRing(1 << 20),
+		conns:    map[*Client]struct{}{},
+		done:     make(chan struct{}),
+		readDone: make(chan struct{}),
+		scr:      screen.New(80, 24, 0),
+		gt:       gate.New(60*time.Millisecond, 12),
 	}
 	go s.readLoop()
 	go s.gt.Run(s.done, s)

@@ -122,6 +122,7 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	m.live[rec.ID] = ps
 	m.mu.Unlock()
 	m.reg.watch(ps) // detection consumer starts with the PTY
+	ps.start()      // goroutines launch only once the session is reachable
 	m.events.Pub(Event{Type: "session.added", Session: ps.Rec()})
 	return rec, nil
 }

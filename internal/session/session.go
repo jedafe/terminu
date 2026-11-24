@@ -39,15 +39,16 @@ const killGrace = 3 * time.Second
 // ptySession owns one PTY child until EOF — server-side persistence means
 // browser disconnect never reaches the process.
 type ptySession struct {
-	rec   *domain.Session
-	cmd   *exec.Cmd
-	ptmx  *os.File
-	buf   *ring
-	mu    sync.Mutex
-	conns map[*Client]struct{}
-	done  chan struct{}
-	once  sync.Once
-	mgr   *Manager
+	rec      *domain.Session
+	cmd      *exec.Cmd
+	ptmx     *os.File
+	buf      *ring
+	mu       sync.Mutex
+	conns    map[*Client]struct{}
+	done     chan struct{} // closed once the session is fully torn down
+	readDone chan struct{} // readLoop drained + persisted; close waits on it
+	once     sync.Once
+	mgr      *Manager
 
 	exitCode int  // set by waitLoop before done closes — read by all clients
 	exited   bool // true once cmd.Wait() has returned
@@ -184,21 +185,28 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 		return nil, err
 	}
 	s := &ptySession{
-		rec:     rec,
-		cmd:     cmd,
-		ptmx:    ptmx,
-		buf:     newRing(m.cfg.SessionBufferKB * 1024),
-		conns:   map[*Client]struct{}{},
-		done:    make(chan struct{}),
-		stateUp: make(chan StateUpdate, 8),
-		mgr:     m,
-		scr:     screen.New(rec.Cols, rec.Rows, m.cfg.ScreenScrollback),
-		gt:      gate.New(time.Duration(m.cfg.QuiescenceMS)*time.Millisecond, m.cfg.ScanBottomRows),
+		rec:      rec,
+		cmd:      cmd,
+		ptmx:     ptmx,
+		buf:      newRing(m.cfg.SessionBufferKB * 1024),
+		conns:    map[*Client]struct{}{},
+		done:     make(chan struct{}),
+		readDone: make(chan struct{}),
+		stateUp:  make(chan StateUpdate, 8),
+		mgr:      m,
+		scr:      screen.New(rec.Cols, rec.Rows, m.cfg.ScreenScrollback),
+		gt:       gate.New(time.Duration(m.cfg.QuiescenceMS)*time.Millisecond, m.cfg.ScanBottomRows),
 	}
+	return s, nil
+}
+
+// start launches the session goroutines. Spawn calls it AFTER the live-map
+// insert — if waitLoop ran before the insert, a fast-exiting process would
+// delete a not-yet-present key and Spawn would then insert a zombie.
+func (s *ptySession) start() {
 	go s.readLoop()
 	go s.waitLoop()
 	go s.gt.Run(s.done, s)
-	return s, nil
 }
 
 // readLoop is the single PTY reader: bytes → ring (seq++) → fan-out →
@@ -206,6 +214,7 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 // detection — adapters only run on gate emits). On exit it persists the
 // ring's tail so finished rows keep their output (§03 scrollback).
 func (s *ptySession) readLoop() {
+	defer close(s.readDone)
 	defer s.persistScrollback()
 	buf := make([]byte, 32*1024)
 	for {
@@ -478,6 +487,14 @@ func (s *ptySession) persistScrollback() {
 func (s *ptySession) close() {
 	s.once.Do(func() {
 		close(s.done)
+		// Drain first: ptmx.Close would discard bytes the dead child
+		// already wrote — closing before readLoop finishes empties the
+		// ring (and the persisted scrollback) for fast exits. Bound the
+		// wait for a grandchild still holding the slave open.
+		select {
+		case <-s.readDone:
+		case <-time.After(time.Second):
+		}
 		_ = s.ptmx.Close()
 		s.mu.Lock()
 		for c := range s.conns {
