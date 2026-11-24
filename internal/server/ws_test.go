@@ -7,12 +7,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 
 	"github.com/jedafe/terminu/internal/adapter"
+	"github.com/jedafe/terminu/internal/config"
+	"github.com/jedafe/terminu/internal/db"
+	"github.com/jedafe/terminu/internal/db/gen"
 	"github.com/jedafe/terminu/internal/domain"
 	"github.com/jedafe/terminu/internal/session"
 )
@@ -102,5 +107,92 @@ func TestSendStateFrames(t *testing.T) {
 	reg, _ := pc["region"].(map[string]any)
 	if reg["y0"] != float64(20) || reg["y1"] != float64(24) {
 		t.Fatalf("clear region: %v", reg)
+	}
+}
+
+// Dead attach: a finished session replays persisted scrollback then eof —
+// hello carries the terminal state, frames carry seq'd bytes, eof the
+// stored exit code. No live PTY involved.
+func TestWsDeadAttach(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	d, err := db.Open(ctx, filepath.Join(dir, "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	mgr := session.NewManager(&config.Config{
+		DataDir: dir, LocalTargetMode: "container",
+		SessionBufferKB: 64, QuiescenceMS: 80, ScanBottomRows: 12, MaxSessions: 5,
+	}, gen.New(d), session.NewEventBus())
+	s := &Server{mgr: mgr, cfg: &config.Config{}}
+
+	rec, err := mgr.Spawn(ctx, domain.SpawnRequest{Target: "local", Shell: "/bin/ls"})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		row, _ := mgr.Get(ctx, rec.ID)
+		if row != nil && session.IsFinished(row.State) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session did not finish: %+v", row)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if _, err := mgr.DeadScrollback(rec.ID); err != nil {
+		t.Fatalf("scrollback file: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws/session/{id}", s.wsSession)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/ws/session/"+rec.ID, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
+	if err := c.Write(ctx, websocket.MessageText,
+		[]byte(`{"type":"attach","last_seq":0}`)); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+
+	var gotData []byte
+	var hello, eof map[string]any
+	for i := 0; i < 40; i++ {
+		mt, data, err := c.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if mt == websocket.MessageBinary {
+			gotData = append(gotData, data[8:]...)
+			continue
+		}
+		var m map[string]any
+		_ = json.Unmarshal(data, &m)
+		switch m["type"] {
+		case "hello":
+			hello = m
+		case "eof":
+			eof = m
+		}
+		if eof != nil {
+			break
+		}
+	}
+	if hello == nil {
+		t.Fatal("no hello frame")
+	}
+	if hello["state"] != "done" && hello["state"] != "ended" {
+		t.Fatalf("hello state: %v", hello)
+	}
+	if len(gotData) == 0 {
+		t.Fatal("no replayed scrollback bytes")
+	}
+	if eof == nil {
+		t.Fatal("no eof frame")
 	}
 }

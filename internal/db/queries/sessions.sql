@@ -40,6 +40,10 @@ DELETE FROM sessions WHERE state IN ('done', 'error', 'ended');
 INSERT INTO session_state_log (session_id, state, kind, confidence, evidence)
 VALUES (?, ?, ?, ?, ?);
 
+-- name: DeleteSessionLog :exec
+-- Purge only the transition history; the session row + scrollback stay.
+DELETE FROM session_state_log WHERE session_id = ?;
+
 -- name: CountLiveSessions :one
 SELECT COUNT(*) FROM sessions
 WHERE state IN ('starting','working','waiting-for-input','undetectable');

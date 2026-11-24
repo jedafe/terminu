@@ -30,11 +30,14 @@ type Adapter interface {
 }
 
 // SessionCtx carries what Detect may know about the session beyond the
-// screen — the bound foreground process and the configured scan scope.
+// screen — the bound foreground process, the configured scan scope, and
+// which gate trigger authorized this scan (generic tiers G3/G4 are
+// quiescence-scoped per the spec's trigger table).
 type SessionCtx struct {
 	SessionID      string
 	FG             proc.Info
-	ScanBottomRows int // TU_SCAN_BOTTOM_ROWS — scope for DefaultScope()
+	ScanBottomRows int    // TU_SCAN_BOTTOM_ROWS — scope for DefaultScope()
+	Trigger        string // gate.Reason.String() — "quiescence", "on_demand", ...
 }
 
 // AdapterPin is a version fingerprint (UI: "patterns: devin-cli ≥1.x,

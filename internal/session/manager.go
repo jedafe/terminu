@@ -10,6 +10,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -24,10 +27,11 @@ import (
 // Manager is the session registry — the only PTY spawn point, reached
 // exclusively through the broker.
 type Manager struct {
-	cfg  *config.Config
-	q    *gen.Queries
-	mu   sync.Mutex
-	live map[string]*ptySession
+	cfg     *config.Config
+	q       *gen.Queries
+	mu      sync.Mutex
+	spawnMu sync.Mutex // serializes the cap-check→spawn sequence
+	live    map[string]*ptySession
 
 	// events fans session lifecycle out to /ws/events subscribers.
 	events *EventBus
@@ -53,7 +57,11 @@ func (m *Manager) Recover(ctx context.Context) error {
 }
 
 // Spawn creates the DB row then the PTY. Called only via broker.Execute.
+// spawnMu makes the cap check atomic with the row insert — without it two
+// racing spawns both pass CountLiveSessions and overshoot MaxSessions.
 func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.Session, error) {
+	m.spawnMu.Lock()
+	defer m.spawnMu.Unlock()
 	n, err := m.q.CountLiveSessions(ctx)
 	if err != nil {
 		return nil, err
@@ -97,6 +105,10 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	}); err != nil {
 		return nil, err
 	}
+	// The append-only log starts at `starting` — every state a session
+	// entered is in session_state_log, not just the detected ones.
+	_ = m.q.LogSessionState(ctx, gen.LogSessionStateParams{
+		SessionID: rec.ID, State: string(domain.StateStarting)})
 	ps, err := m.spawn(ctx, rec)
 	if err != nil {
 		_ = m.q.UpdateSessionState(ctx, gen.UpdateSessionStateParams{
@@ -142,7 +154,7 @@ func (m *Manager) List(ctx context.Context) ([]domain.Session, error) {
 	}
 	out := make([]domain.Session, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, rowToSession(r))
+		out = append(out, m.rowToSession(r))
 	}
 	return out, nil
 }
@@ -155,7 +167,7 @@ func (m *Manager) Get(ctx context.Context, id string) (*domain.Session, error) {
 		}
 		return nil, err
 	}
-	s := rowToSession(r)
+	s := m.rowToSession(r)
 	return &s, nil
 }
 
@@ -167,9 +179,10 @@ func (m *Manager) Rename(ctx context.Context, id, name string) error {
 	return nil
 }
 
-// Kill terminates the process. The row stays — onExit marks it `ended`
-// so its session_state_log history survives (broker action, audited by
-// caller; DELETE on a live session lands here).
+// Kill terminates the process — SIGTERM, a grace window for the child to
+// save state, then SIGKILL (§03 lifecycle). The row stays: onExit marks
+// it `ended` so its session_state_log history survives (broker action,
+// audited by caller; DELETE on a live session lands here).
 func (m *Manager) Kill(ctx context.Context, id string) error {
 	m.mu.Lock()
 	s, ok := m.live[id]
@@ -177,14 +190,13 @@ func (m *Manager) Kill(ctx context.Context, id string) error {
 	if !ok {
 		return nil
 	}
-	s.mu.Lock()
-	s.killed = true
-	s.mu.Unlock()
-	return s.cmd.Process.Kill()
+	s.terminate()
+	return nil
 }
 
 // Delete hard-removes a finished session row + its state log (FK
-// cascade). Live sessions refuse — terminate first (invalid_transition).
+// cascade) + its persisted scrollback file. Live sessions refuse —
+// terminate first (invalid_transition).
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	m.mu.Lock()
 	_, live := m.live[id]
@@ -192,7 +204,17 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	if live {
 		return ErrStillLive
 	}
-	return m.q.DeleteSession(ctx, id)
+	if err := m.q.DeleteSession(ctx, id); err != nil {
+		return err
+	}
+	_ = os.Remove(m.scrollbackPath(id))
+	return nil
+}
+
+// PurgeLog clears only the session's session_state_log history — the
+// row + persisted scrollback stay (DELETE /{id}/log semantics).
+func (m *Manager) PurgeLog(ctx context.Context, id string) error {
+	return m.q.DeleteSessionLog(ctx, id)
 }
 
 // ClearFinished hard-removes every finished row (done/error/ended) +
@@ -211,8 +233,13 @@ func (m *Manager) ClearFinished(ctx context.Context) ([]string, error) {
 	if len(ids) == 0 {
 		return ids, nil
 	}
-	_, err = m.q.DeleteFinishedSessions(ctx)
-	return ids, err
+	if _, err := m.q.DeleteFinishedSessions(ctx); err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		_ = os.Remove(m.scrollbackPath(id))
+	}
+	return ids, nil
 }
 
 // IsFinished is the delete-eligible state set — the process is gone.
@@ -220,15 +247,42 @@ func IsFinished(st domain.SessionState) bool {
 	return st == domain.StateDone || st == domain.StateError || st == domain.StateEnded
 }
 
-// Scrollback pages the ring buffer — in-memory per session (no persistence;
-// restarts end sessions rather than fake scrollback).
-func (m *Manager) Scrollback(id string) ([]chunk, error) {
-	s, err := m.Attach(id)
-	if err != nil {
+// scrollbackPath is the persisted output file for a session id —
+// {data_dir}/scrollback/{id}. Written once when the PTY's read loop
+// ends; removed when the row is deleted.
+func (m *Manager) scrollbackPath(id string) string {
+	return filepath.Join(m.cfg.DataDir, "scrollback", id)
+}
+
+// Scrollback serves retained output: live sessions read the ring;
+// finished rows read the persisted file (§03 — restart- and exit-safe).
+func (m *Manager) Scrollback(id string) ([]byte, error) {
+	if s, err := m.Attach(id); err == nil {
+		chunks, _ := s.buf.snapshot()
+		var b []byte
+		for _, c := range chunks {
+			b = append(b, c.data...)
+		}
+		return b, nil
+	}
+	if _, err := m.Get(context.Background(), id); err != nil {
 		return nil, err
 	}
-	chunks, _ := s.buf.snapshot()
-	return chunks, nil
+	data, err := os.ReadFile(m.scrollbackPath(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil // finished row without persisted output — empty
+	}
+	return data, err
+}
+
+// DeadScrollback is the WS dead-attach replay source — finished rows
+// only; returns the persisted bytes (nil if none were captured).
+func (m *Manager) DeadScrollback(id string) ([]byte, error) {
+	data, err := os.ReadFile(m.scrollbackPath(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return data, err
 }
 
 // onExit records process exit → done (or error on non-zero).
@@ -237,6 +291,7 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	delete(m.live, s.rec.ID)
 	m.mu.Unlock()
 	fgName := m.reg.fgName(s.rec.ID)
+	prevSt := m.reg.lastState(s.rec.ID)
 	m.reg.unwatch(s.rec.ID)
 	ctx := context.Background()
 	st := domain.StateDone
@@ -257,6 +312,10 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	m.events.Pub(Event{Type: "session.exited", SessionID: s.rec.ID, Session: s.Rec()})
 	// *→done|error is a catalog notify transition — agent.state carries it.
 	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, Process: fgName, State: st})
+	if st == domain.StateDone || st == domain.StateError {
+		m.events.Pub(Event{Type: "alert", SessionID: s.rec.ID,
+			Level: alertLevel(st), Transition: transition(prevSt, st)})
+	}
 }
 
 // AgentView is one row of GET /api/agents — the needs-you surface:
@@ -295,14 +354,18 @@ func (m *Manager) Agents() []AgentView {
 		if u.Match != nil {
 			v.Kind, v.Confidence, v.Prompt = u.Match.Kind, u.Match.Confidence, u.Match.Prompt
 		}
+		v.Session.Detached = m.isDetached(v.Session.DetachedAt)
 		out = append(out, v)
 	}
 
-	rank := func(st domain.SessionState) int {
-		switch st {
-		case domain.StateWaitingForInput:
+	// Ref: .teos/AGENTS.md — "never promote a low-confidence wait":
+	// waiting{unknown} stays out of the top rank, the overlay shows
+	// "may be waiting" only.
+	rank := func(v AgentView) int {
+		switch {
+		case v.State == domain.StateWaitingForInput && v.Confidence != domain.ConfidenceLow:
 			return 0
-		case domain.StateDone, domain.StateError, domain.StateEnded:
+		case v.State == domain.StateDone || v.State == domain.StateError || v.State == domain.StateEnded:
 			return 2
 		default:
 			return 1
@@ -319,7 +382,7 @@ func (m *Manager) Agents() []AgentView {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		ri, rj := rank(out[i].State), rank(out[j].State)
+		ri, rj := rank(out[i]), rank(out[j])
 		if ri != rj {
 			return ri < rj
 		}
@@ -335,12 +398,36 @@ func (m *Manager) Agents() []AgentView {
 }
 
 // onDetached notes last-detach time; the process keeps running.
-func (m *Manager) onDetached(id string) {
-	now := time.Now().UTC().Format(time.RFC3339)
+// Guarded on liveness: a Detach racing session close() must not stamp
+// detached_at on a session that's already gone.
+func (m *Manager) onDetached(s *ptySession) {
+	m.mu.Lock()
+	_, live := m.live[s.rec.ID]
+	m.mu.Unlock()
+	if !live {
+		return
+	}
+	now := time.Now().UTC()
+	s.setDetachedAt(now)
 	_ = m.q.UpdateSessionDetached(context.Background(),
 		gen.UpdateSessionDetachedParams{
-			DetachedAt: sql.NullString{String: now, Valid: true}, ID: id})
-	m.events.Pub(Event{Type: "session.detached", SessionID: id})
+			DetachedAt: sql.NullString{String: now.Format(time.RFC3339), Valid: true}, ID: s.rec.ID})
+	m.events.Pub(Event{Type: "session.detached", SessionID: s.rec.ID})
+}
+
+// clearDetachedDB drops detached_at once a client is attached again —
+// the stamp only exists while nobody is watching.
+func (m *Manager) clearDetachedDB(id string) {
+	if err := m.q.UpdateSessionDetached(context.Background(),
+		gen.UpdateSessionDetachedParams{DetachedAt: sql.NullString{}, ID: id}); err != nil {
+		slog.Warn("clear detached_at", "session", id, "err", err)
+	}
+}
+
+// isDetached derives the `detached` overlay flag: nobody attached for
+// longer than TU_RECONNECT_WINDOW_S (catalog: flag, not a state).
+func (m *Manager) isDetached(at *time.Time) bool {
+	return at != nil && time.Since(*at) > time.Duration(m.cfg.ReconnectWindowSec)*time.Second
 }
 
 func (m *Manager) setState(ctx context.Context, id string, st domain.SessionState, kind, conf, ev string) error {
@@ -358,7 +445,9 @@ func (m *Manager) setState(ctx context.Context, id string, st domain.SessionStat
 		Kind: null(kind), Confidence: null(conf), Evidence: null(ev)})
 }
 
-// CloseAll shuts every live PTY — graceful server stop.
+// CloseAll shuts every live PTY — graceful server stop: TERM first,
+// one shared grace window, then KILL whatever ignored it. Children
+// that exit fast don't cost the wait (done closes as they finish).
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
 	list := make([]*ptySession, 0, len(m.live))
@@ -367,12 +456,22 @@ func (m *Manager) CloseAll() {
 	}
 	m.mu.Unlock()
 	for _, s := range list {
+		s.terminate()
+	}
+	deadline := time.After(killGrace)
+	for _, s := range list {
+		select {
+		case <-s.done:
+		case <-deadline:
+		}
+	}
+	for _, s := range list {
 		_ = s.cmd.Process.Kill()
 		s.close()
 	}
 }
 
-func rowToSession(r gen.Session) domain.Session {
+func (m *Manager) rowToSession(r gen.Session) domain.Session {
 	var ec *int
 	if r.ExitCode.Valid {
 		v := int(r.ExitCode.Int64)
@@ -394,7 +493,7 @@ func rowToSession(r gen.Session) domain.Session {
 		}
 	}
 	cAt, _ := time.Parse(time.RFC3339, r.CreatedAt)
-	return domain.Session{
+	s := domain.Session{
 		ID: r.ID, Name: r.Name,
 		Target: domain.Target{Kind: r.TargetKind, ID: r.TargetID},
 		Cwd:    r.Cwd, Shell: r.Shell,
@@ -402,6 +501,8 @@ func rowToSession(r gen.Session) domain.Session {
 		WorkspaceID: wid, Cols: int(r.Cols), Rows: int(r.Rows),
 		CreatedAt: cAt, DetachedAt: dAt, EndedAt: eAt,
 	}
+	s.Detached = m.isDetached(dAt)
+	return s
 }
 
 func newID() string {

@@ -116,6 +116,13 @@
 		await refreshAgents().catch(() => {});
 	}
 
+	// DELETE /{id}/log — purge only the state history; row + scrollback
+	// stay so the session output remains viewable.
+	async function purgeLog(id: string, e: Event) {
+		e.stopPropagation();
+		await api.clearLog(id);
+	}
+
 	// DELETE /api/sessions — clear all finished rows + their logs at once.
 	async function clearFinished(e: Event) {
 		e.stopPropagation();
@@ -308,9 +315,10 @@
 			<span class="ssub" class:needs={needsYou(s)}>{subLabel(s)}</span>
 		</span>
 		{#if isLive(s)}
-			<button class="sact end" title="terminate session" onclick={(e) => endOrDelete(s.id, e)}>end</button>
+			<button class="sact end" title="terminate session — keeps the log row" onclick={(e) => endOrDelete(s.id, e)}>end</button>
 		{:else}
-			<button class="sact del" title="delete session log" onclick={(e) => endOrDelete(s.id, e)}>del</button>
+			<button class="sact hist" title="purge state history only — keeps row + output" onclick={(e) => purgeLog(s.id, e)}>hist</button>
+			<button class="sact del" title="delete session + log + output" onclick={(e) => endOrDelete(s.id, e)}>del</button>
 		{/if}
 	</div>
 {/snippet}
@@ -509,6 +517,13 @@
 	}
 	.sact.end:active {
 		background: #2a2410;
+	}
+	.sact.hist {
+		color: #6b7f9e;
+	}
+	.sact.hist:active {
+		background: #1c2a44;
+		color: #9db2ce;
 	}
 	.sact.del {
 		color: #8a4a5a;

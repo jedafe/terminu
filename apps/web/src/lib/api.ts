@@ -35,6 +35,7 @@ export const api = {
 	spawn: (s: SpawnRequest) => req<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(s) }),
 	kill: (id: string) => req(`/api/sessions/${id}`, { method: 'DELETE' }),
 	clearFinished: () => req<{ cleared: number }>('/api/sessions', { method: 'DELETE' }),
+	clearLog: (id: string) => req(`/api/sessions/${id}/log`, { method: 'DELETE' }),
 	rename: (id: string, name: string) =>
 		req(`/api/sessions/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
 	workspaces: () => req<Workspace[]>('/api/workspaces'),

@@ -78,6 +78,16 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteSessionLog = `-- name: DeleteSessionLog :exec
+DELETE FROM session_state_log WHERE session_id = ?
+`
+
+// Purge only the transition history; the session row + scrollback stay.
+func (q *Queries) DeleteSessionLog(ctx context.Context, sessionID string) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionLog, sessionID)
+	return err
+}
+
 const getSession = `-- name: GetSession :one
 SELECT id, name, target_kind, target_id, cwd, shell, state, exit_code,
        workspace_id, cols, rows, created_at, detached_at, ended_at

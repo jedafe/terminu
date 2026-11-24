@@ -37,6 +37,7 @@ type Config struct {
 	SFTPEnabled        bool
 	SFTPPort           int
 	LocalTargetMode    string // host | nsenter | container
+	HostUser           string // user spawned sessions switch to (host/nsenter modes)
 	SSHKnownHosts      string
 	LogLevel           string
 	SecretsKey         string
@@ -116,6 +117,7 @@ func Load() (*Config, error) {
 	c.SFTPEnabled = getbool("TU_SFTP_ENABLED", c.SFTPEnabled)
 	c.SFTPPort = getint("TU_SFTP_PORT", c.SFTPPort)
 	c.LocalTargetMode = getenv("TU_LOCAL_TARGET_MODE", c.LocalTargetMode)
+	c.HostUser = getenv("TU_HOST_USER", c.HostUser)
 	c.SSHKnownHosts = getenv("TU_SSH_KNOWN_HOSTS", filepath.Join(c.DataDir, "known_hosts"))
 	c.LogLevel = getenv("TU_LOG_LEVEL", c.LogLevel)
 	c.SecretsKey = getenv("TU_SECRETS_KEY", c.SecretsKey)
@@ -135,8 +137,10 @@ func Load() (*Config, error) {
 
 // applyToml applies termiu.toml keys found in ./terminu.toml or $TU_DATA_DIR/terminu.toml.
 // Minimal parser: [section] headers + key = "value" (env stays the primary surface).
+// The search path resolves TU_DATA_DIR from the environment directly —
+// data.dir can't be set by a file it still has to be found at.
 func applyToml(c *Config) {
-	for _, path := range []string{"./terminu.toml", "./data/terminu.toml"} {
+	for _, path := range []string{"./terminu.toml", filepath.Join(getenv("TU_DATA_DIR", "./data"), "terminu.toml")} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -203,6 +207,14 @@ func (c *Config) setToml(key, val string) {
 		c.ScreenScrollback, _ = strconv.Atoi(val)
 	case "llm.enabled":
 		c.LLMEnabled = val == "true"
+	case "llm.provider":
+		c.LLMProvider = val
+	case "llm.endpoint":
+		c.LLMEndpoint = val
+	case "llm.api_key":
+		c.LLMAPIKey = val
+	case "llm.model":
+		c.LLMModel = val
 	case "docker.socket":
 		c.DockerSocket = val
 	case "sftp.enabled":
@@ -211,6 +223,8 @@ func (c *Config) setToml(key, val string) {
 		c.SFTPPort, _ = strconv.Atoi(val)
 	case "local.target_mode":
 		c.LocalTargetMode = val
+	case "host.user":
+		c.HostUser = val
 	case "ssh.known_hosts":
 		c.SSHKnownHosts = val
 	case "log.level":

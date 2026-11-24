@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,6 +36,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// TU_LOG_LEVEL selects slog's floor — it was loaded but never
+	// applied; default stays info.
+	if lvl, ok := map[string]slog.Level{
+		"debug": slog.LevelDebug, "info": slog.LevelInfo,
+		"warn": slog.LevelWarn, "error": slog.LevelError,
+	}[strings.ToLower(cfg.LogLevel)]; ok {
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
+	}
 	ctx := context.Background()
 
 	d, err := db.Open(ctx, cfg.SQLitePath)
@@ -55,7 +65,7 @@ func run() error {
 	br := broker.New(q)
 	srv := server.New(cfg, q, authSvc, br, mgr, bus)
 
-	addr := cfg.Bind + ":" + itoa(cfg.Port)
+	addr := cfg.Bind + ":" + strconv.Itoa(cfg.Port)
 	hs := &http.Server{
 		Addr:              addr,
 		Handler:           srv.Handler(),
@@ -83,8 +93,4 @@ func run() error {
 	_ = hs.Shutdown(ctx)
 	mgr.CloseAll()
 	return nil
-}
-
-func itoa(i int) string {
-	return fmt.Sprintf("%d", i)
 }

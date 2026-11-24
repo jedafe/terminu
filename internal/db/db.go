@@ -63,12 +63,25 @@ func migrate(ctx context.Context, d *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		if _, err := d.ExecContext(ctx, string(body)); err != nil {
+		// Each migration + its version row commit atomically — a
+		// mid-file failure must not leave half a schema applied with
+		// nothing recorded (that state can't be retried or reasoned
+		// about; it just bricks every subsequent boot).
+		tx, err := d.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("migration %s: %w", name, err)
 		}
-		if _, err := d.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO schema_migrations(version) VALUES(?)`, name); err != nil {
+			_ = tx.Rollback()
 			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("migration %s: %w", name, err)
 		}
 	}
 	return nil

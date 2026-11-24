@@ -48,7 +48,10 @@ func (aiderAdapter) MatchesProcess(proc string, argv []string) bool {
 }
 
 func (aiderAdapter) Pin() AdapterPin {
-	return AdapterPin{Tool: "aider", Constraint: ">=0.70 <1.0", VerifiedAt: "unverified — fixtures pending"}
+	// No real-session .cast fixtures yet — the pin stays empty rather
+	// than minting a fake ISO date; the UI badging reads empty as
+	// "unverified".
+	return AdapterPin{Tool: "aider", Constraint: ">=0.70 <1.0"}
 }
 
 func (aiderAdapter) Detect(s *screen.Screen, ctx *SessionCtx) *StateMatch {
@@ -73,13 +76,16 @@ func (aiderAdapter) Detect(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 
 	items := aiderOptItem.FindAllStringSubmatch(grp, -1)
 	opts := make([]PromptOption, 0, len(items))
-	for _, it := range items {
+	for i, it := range items {
 		key := it[1]
 		label := key + it[2] // "(Y)es" → "Yes", "(D)on't" → "Don't"
 		opts = append(opts, PromptOption{
-			Label:   label,
-			Inject:  Text(strings.ToLower(key)), // line-mode: char + Enter
-			Default: key != strings.ToLower(key),
+			Label:  label,
+			Inject: Text(strings.ToLower(key)), // line-mode: char + Enter
+			// Aider's convention is first-option-on-Enter; its letters
+			// are all uppercase, so case can't pick a default (marking
+			// every option Default made the badge meaningless).
+			Default: i == 0,
 		})
 	}
 	// Kind: pure y/n pair → confirm; wider choice → option.

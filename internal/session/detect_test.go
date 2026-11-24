@@ -35,7 +35,6 @@ func TestDetectionFeed(t *testing.T) {
 		buf:   newRing(1 << 20),
 		conns: map[*Client]struct{}{},
 		done:  make(chan struct{}),
-		exit:  make(chan int, 1),
 		scr:   screen.New(80, 24, 0),
 		gt:    gate.New(60*time.Millisecond, 12),
 	}

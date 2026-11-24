@@ -24,6 +24,11 @@ func (s *Server) staticHandler() http.HandlerFunc {
 		p := path.Clean("/" + r.URL.Path)
 		if f, err := sub.Open(strings.TrimPrefix(p, "/")); err == nil {
 			f.Close()
+			// Vite emits content-hashed names under _app/immutable —
+			// safe to cache effectively forever.
+			if strings.HasPrefix(p, "/_app/immutable/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}

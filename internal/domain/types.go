@@ -77,6 +77,10 @@ type Session struct {
 	CreatedAt   time.Time    `json:"created_at"`
 	DetachedAt  *time.Time   `json:"detached_at,omitempty"`
 	EndedAt     *time.Time   `json:"ended_at,omitempty"`
+	// Detached is the overlay flag from the state catalog: true when no
+	// client has been attached longer than TU_RECONNECT_WINDOW_S. The
+	// process state (working/waiting) still applies underneath it.
+	Detached bool `json:"detached,omitempty"`
 }
 
 // SpawnRequest is POST /api/sessions.

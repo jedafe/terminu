@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +68,13 @@ func writeErr(w http.ResponseWriter, status int, code, msg string) {
 	})
 }
 
+// internalErr logs the real error and returns the catalog `internal`
+// shape — error detail is logged server-side, never leaked to clients.
+func (s *Server) internalErr(w http.ResponseWriter, err error) {
+	slog.Error("internal error", "err", err)
+	writeErr(w, 500, "internal", "internal error")
+}
+
 // requireAuth wraps handlers behind cookie auth.
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -79,27 +87,40 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// requireRole additionally gates on a catalog role — e.g. the audit log
+// is admin-only (routes catalog annotates it "(admin)").
+func (s *Server) requireRole(role string, next http.HandlerFunc) http.HandlerFunc {
+	return s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if p := principal(r); p == nil || p.Role != role {
+			writeErr(w, http.StatusForbidden, "forbidden", "insufficient role")
+			return
+		}
+		next(w, r)
+	})
+}
+
 func (s *Server) routes() {
 	// public
 	s.mux.HandleFunc("GET /api/system/health", s.health)
+	s.mux.HandleFunc("GET /api/system/version", s.version) // catalog: public
 	s.mux.HandleFunc("POST /api/auth/login", s.login)
 
 	// authed REST
 	s.mux.HandleFunc("POST /api/auth/logout", s.requireAuth(s.logout))
 	s.mux.HandleFunc("GET /api/auth/me", s.requireAuth(s.me))
-	s.mux.HandleFunc("GET /api/system/version", s.requireAuth(s.version))
 	s.mux.HandleFunc("GET /api/sessions", s.requireAuth(s.listSessions))
 	s.mux.HandleFunc("POST /api/sessions", s.requireAuth(s.spawnSession))
 	s.mux.HandleFunc("GET /api/sessions/{id}", s.requireAuth(s.getSession))
 	s.mux.HandleFunc("PATCH /api/sessions/{id}", s.requireAuth(s.patchSession))
 	s.mux.HandleFunc("DELETE /api/sessions", s.requireAuth(s.clearFinished))
 	s.mux.HandleFunc("DELETE /api/sessions/{id}", s.requireAuth(s.killSession))
+	s.mux.HandleFunc("DELETE /api/sessions/{id}/log", s.requireAuth(s.purgeLog))
 	s.mux.HandleFunc("GET /api/sessions/{id}/scrollback", s.requireAuth(s.scrollback))
 	s.mux.HandleFunc("GET /api/agents", s.requireAuth(s.listAgents))
 	s.mux.HandleFunc("GET /api/agents/{id}/prompt", s.requireAuth(s.agentPrompt))
 	s.mux.HandleFunc("GET /api/workspaces", s.requireAuth(s.listWorkspaces))
 	s.mux.HandleFunc("PUT /api/workspaces/{id}", s.requireAuth(s.putWorkspace))
-	s.mux.HandleFunc("GET /api/audit", s.requireAuth(s.listAudit))
+	s.mux.HandleFunc("GET /api/audit", s.requireRole("admin", s.listAudit))
 
 	// websockets
 	s.mux.HandleFunc("/ws/session/{id}", s.requireAuth(s.wsSession))
@@ -129,9 +150,12 @@ func mustList(m *session.Manager) []domain.Session {
 
 // ---------- auth ----------
 
-// loginThrottle is a small per-IP failure window — argon2 t=1 is ~50ms,
-// so without it /api/auth/login is an unthrottled brute-force surface.
-// rate_limited (429) is the cataloged response.
+// loginThrottle buckets failed attempts — argon2 t=1 is ~50ms, so
+// without it /api/auth/login is an unthrottled brute-force surface.
+// Buckets are keyed, not global: the username key throttles credential
+// attacks on an account, the IP key is a generous flood backstop.
+// Keying on RemoteAddr alone would let one attacker behind the shared
+// reverse proxy lock every user out (RemoteAddr is the proxy's IP).
 type loginThrottle struct {
 	mu    sync.Mutex
 	fails map[string][]time.Time
@@ -139,30 +163,35 @@ type loginThrottle struct {
 
 const (
 	throttleWindow = 10 * time.Minute
-	throttleMax    = 5
+	throttleMax    = 5  // per username
+	throttleIPMax  = 50 // per source IP — flood backstop, not the gate
 )
 
-func (t *loginThrottle) limited(ip string) bool {
+func (t *loginThrottle) limited(key string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := time.Now()
-	f := t.fails[ip]
+	f := t.fails[key]
 	keep := f[:0]
 	for _, ts := range f {
 		if now.Sub(ts) < throttleWindow {
 			keep = append(keep, ts)
 		}
 	}
-	t.fails[ip] = keep
+	t.fails[key] = keep
 	if len(keep) == 0 {
-		delete(t.fails, ip)
+		delete(t.fails, key)
 	}
-	return len(keep) >= throttleMax
+	max := throttleMax
+	if strings.HasPrefix(key, "i:") {
+		max = throttleIPMax
+	}
+	return len(keep) >= max
 }
 
-func (t *loginThrottle) fail(ip string) {
+func (t *loginThrottle) fail(key string) {
 	t.mu.Lock()
-	t.fails[ip] = append(t.fails[ip], time.Now())
+	t.fails[key] = append(t.fails[key], time.Now())
 	t.mu.Unlock()
 }
 
@@ -170,10 +199,6 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if ip == "" {
 		ip = r.RemoteAddr
-	}
-	if s.throttle.limited(ip) {
-		writeErr(w, 429, "rate_limited", "too many attempts — try again later")
-		return
 	}
 	var body struct {
 		Username string `json:"username"`
@@ -183,9 +208,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "bad_request", "invalid JSON")
 		return
 	}
+	uKey := "u:" + strings.ToLower(strings.TrimSpace(body.Username))
+	if s.throttle.limited(uKey) || s.throttle.limited("i:"+ip) {
+		writeErr(w, 429, "rate_limited", "too many attempts — try again later")
+		return
+	}
 	token, err := s.auth.Login(r.Context(), body.Username, body.Password)
 	if err != nil {
-		s.throttle.fail(ip)
+		s.throttle.fail(uKey)
+		s.throttle.fail("i:" + ip)
 		writeErr(w, 401, "unauthorized", "invalid credentials")
 		return
 	}
@@ -211,16 +242,33 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	l, err := s.mgr.List(r.Context())
 	if err != nil {
-		writeErr(w, 500, "internal", err.Error())
+		s.internalErr(w, err)
 		return
 	}
 	writeJSON(w, 200, l)
 }
 
+// Spawn bounds: sessions allocate cols×rows cells + scrollback in
+// memory — unvalidated dimensions are a memory-exhaustion vector that
+// breaks the <15 MB/session budget (Rule 13).
+const (
+	maxSpawnCols  = 512
+	maxSpawnRows  = 256
+	maxSpawnField = 4096 // cwd
+	maxSpawnShort = 512  // target / shell
+	maxSpawnName  = 128
+)
+
 func (s *Server) spawnSession(w http.ResponseWriter, r *http.Request) {
 	var req domain.SpawnRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, "bad_request", "invalid JSON")
+		return
+	}
+	if req.Cols < 0 || req.Cols > maxSpawnCols || req.Rows < 0 || req.Rows > maxSpawnRows ||
+		len(req.Name) > maxSpawnName || len(req.Cwd) > maxSpawnField ||
+		len(req.Shell) > maxSpawnShort || len(req.Target) > maxSpawnShort {
+		writeErr(w, 400, "bad_request", "field out of bounds")
 		return
 	}
 	p := principal(r)
@@ -246,10 +294,10 @@ func (s *Server) spawnSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if errors.Is(err, session.ErrLimit) {
-			writeErr(w, 429, "session_limit", "session limit reached")
+			writeErr(w, 409, "session_limit", "session limit reached")
 			return
 		}
-		writeErr(w, 500, "internal", err.Error())
+		s.internalErr(w, err)
 		return
 	}
 	writeJSON(w, 201, rec)
@@ -308,7 +356,7 @@ func (s *Server) patchSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Name != nil {
 		if err := s.mgr.Rename(r.Context(), id, *body.Name); err != nil {
-			writeErr(w, 500, "internal", err.Error())
+			s.internalErr(w, err)
 			return
 		}
 	}
@@ -351,7 +399,7 @@ func (s *Server) killSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, 500, "internal", err.Error())
+		s.internalErr(w, err)
 		return
 	}
 	if finished {
@@ -380,7 +428,7 @@ func (s *Server) clearFinished(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, 500, "internal", err.Error())
+		s.internalErr(w, err)
 		return
 	}
 	for _, id := range ids {
@@ -389,18 +437,54 @@ func (s *Server) clearFinished(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"cleared": len(ids)})
 }
 
-// scrollback returns buffered output bytes (concatenated) — client-side
-// buffer search/pages per section-03. In-memory only; nothing persists.
+// scrollback returns retained output bytes — live sessions read the
+// ring, finished rows read the persisted file. Client-side buffer
+// search/pages per section-03. ?offset=N pages: bytes before it are
+// skipped; X-Total-Size reports the full retained size.
 func (s *Server) scrollback(w http.ResponseWriter, r *http.Request) {
-	chunks, err := s.mgr.Scrollback(r.PathValue("id"))
+	data, err := s.mgr.Scrollback(r.PathValue("id"))
 	if err != nil {
 		writeErr(w, 404, "session_not_found", "no such session")
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	for _, c := range chunks {
-		_, _ = w.Write(c.Data())
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 || offset > len(data) {
+		offset = 0
 	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Total-Size", strconv.Itoa(len(data)))
+	_, _ = w.Write(data[offset:])
+}
+
+// purgeLog is DELETE /api/sessions/{id}/log — drops only the transition
+// history; the row + scrollback stay (the "keep output, drop noise" tier).
+func (s *Server) purgeLog(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p := principal(r)
+	op := broker.Op{Actor: p, Action: "session.clearlog", Target: id, Risk: broker.RiskControlled}
+	if err := s.br.Check(op); err != nil {
+		writeErr(w, 403, "action_restricted", "role may not clear session logs")
+		return
+	}
+	if _, err := s.mgr.Get(r.Context(), id); err != nil {
+		writeErr(w, 404, "session_not_found", "no such session")
+		return
+	}
+	err := s.mgr.PurgeLog(r.Context(), id)
+	res := "ok"
+	if err != nil {
+		res = "error"
+	}
+	if aerr := s.br.Audit(r.Context(), op, res); aerr != nil {
+		slog.Error("audit write failed", "err", aerr)
+		writeErr(w, 500, "internal", "audit write failed")
+		return
+	}
+	if err != nil {
+		writeErr(w, 500, "internal", err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
 }
 
 // ---------- workspaces ----------
@@ -408,7 +492,7 @@ func (s *Server) scrollback(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.q.ListWorkspaces(r.Context())
 	if err != nil {
-		writeErr(w, 500, "internal", err.Error())
+		s.internalErr(w, err)
 		return
 	}
 	out := []domain.Workspace{}
@@ -431,16 +515,28 @@ func (s *Server) putWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "bad_request", "invalid JSON")
 		return
 	}
-	var id int64
-	if _, err := parseID(r.PathValue("id")); err == nil {
-		// path id wins when numeric
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, 400, "bad_request", "workspace id must be numeric")
+		return
 	}
-	id, _ = parseID(r.PathValue("id"))
+	if strings.TrimSpace(body.Name) == "" {
+		writeErr(w, 400, "bad_request", "workspace name required")
+		return
+	}
+	if body.Layout != "" && !json.Valid([]byte(body.Layout)) {
+		writeErr(w, 400, "bad_request", "layout must be JSON")
+		return
+	}
 	if err := s.q.UpsertWorkspace(r.Context(), gen.UpsertWorkspaceParams{
 		ID: id, Name: body.Name, Layout: body.Layout,
 		LastOpenSession: nullString(body.LastSession),
 	}); err != nil {
-		writeErr(w, 500, "internal", err.Error())
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeErr(w, 400, "bad_request", "workspace name already exists")
+			return
+		}
+		s.internalErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})
@@ -449,7 +545,7 @@ func (s *Server) putWorkspace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.q.ListAudit(r.Context(), 200)
 	if err != nil {
-		writeErr(w, 500, "internal", err.Error())
+		s.internalErr(w, err)
 		return
 	}
 	writeJSON(w, 200, rows)

@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -26,9 +28,13 @@ import (
 // Client is one attached consumer of PTY output. Slow clients drop on a
 // full channel — they resync via attach{last_seq} (bounded-buffer contract).
 type Client struct {
-	C    chan []byte
-	Done func()
+	C chan []byte
 }
+
+// killGrace is how long a deliberate terminate lets the TERM'd child
+// clean up (shell history, aider state) before escalating to SIGKILL —
+// §03 terminate semantics: TERM → grace → KILL.
+const killGrace = 3 * time.Second
 
 // ptySession owns one PTY child until EOF — server-side persistence means
 // browser disconnect never reaches the process.
@@ -40,9 +46,11 @@ type ptySession struct {
 	mu    sync.Mutex
 	conns map[*Client]struct{}
 	done  chan struct{}
-	exit  chan int
 	once  sync.Once
 	mgr   *Manager
+
+	exitCode int  // set by waitLoop before done closes — read by all clients
+	exited   bool // true once cmd.Wait() has returned
 
 	killed bool           // deliberate terminate → onExit lands `ended`, not `error`
 	scr    *screen.Screen // §06 headless model — fed in readLoop
@@ -70,10 +78,7 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 	}
 	switch m.cfg.LocalTargetMode {
 	case "nsenter":
-		user := hostUser()
-		if user == "" {
-			user = "japa"
-		}
+		user := orDefault(m.cfg.HostUser, "japa")
 		// Our PTY lives on the container's devpts; after nsenter -m the
 		// session's /dev/tty resolves against the HOST devpts and job
 		// control breaks ("cannot set terminal process group"). `script`
@@ -90,7 +95,7 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		// sessions land as (e.g. the operator's dev user). The service
 		// user needs NOPASSWD sudo; sudo keeps our host-devpts ctty so
 		// job control stays native — no relay needed (ADR-006 option 1).
-		if u := hostUser(); u != "" && u != currentUser() {
+		if u := m.cfg.HostUser; u != "" && u != currentUser() {
 			return "sudo", []string{"-n", "-iu", u, "--", shell, "-l"}, nil
 		}
 		return shell, []string{"-l"}, nil
@@ -105,10 +110,6 @@ func orDefault(s, def string) string {
 	}
 	return s
 }
-
-// hostUser is TU_HOST_USER — the account sessions should land as when the
-// service itself runs under a different system user (host/nsenter modes).
-func hostUser() string { return os.Getenv("TU_HOST_USER") }
 
 // currentUser resolves the service's own account for the sudo decision.
 func currentUser() string {
@@ -157,7 +158,7 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 		// WorkingDirectory — shells should open where the user lives.
 		// When sudo -iu crosses into another account it owns cwd+env
 		// itself; setting Dir to a foreign home would fail the spawn.
-		sudoing := m.cfg.LocalTargetMode == "host" && hostUser() != "" && hostUser() != currentUser()
+		sudoing := m.cfg.LocalTargetMode == "host" && m.cfg.HostUser != "" && m.cfg.HostUser != currentUser()
 		if !sudoing {
 			if rec.Cwd == "" {
 				rec.Cwd, _ = os.UserHomeDir()
@@ -189,7 +190,6 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 		buf:     newRing(m.cfg.SessionBufferKB * 1024),
 		conns:   map[*Client]struct{}{},
 		done:    make(chan struct{}),
-		exit:    make(chan int, 1),
 		stateUp: make(chan StateUpdate, 8),
 		mgr:     m,
 		scr:     screen.New(rec.Cols, rec.Rows, m.cfg.ScreenScrollback),
@@ -203,8 +203,10 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 
 // readLoop is the single PTY reader: bytes → ring (seq++) → fan-out →
 // screen model + gate notify (the §06 detection feed; parsing is not
-// detection — adapters only run on gate emits).
+// detection — adapters only run on gate emits). On exit it persists the
+// ring's tail so finished rows keep their output (§03 scrollback).
 func (s *ptySession) readLoop() {
+	defer s.persistScrollback()
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := s.ptmx.Read(buf)
@@ -227,15 +229,23 @@ func (s *ptySession) readLoop() {
 }
 
 // waitLoop turns process exit into the done|error state + eof event.
+// Order matters: the exit code is stored BEFORE close() drops clients so
+// every attached socket (split panes included) can read it for eof —
+// a consumable channel would hand the code to only the first reader.
+// close() also runs before onExit so the registry's done-check in
+// bindingFor makes re-binding impossible — a queued gate event consumed
+// in that window can't resurrect the bound entry unwatch clears.
 func (s *ptySession) waitLoop() {
 	err := s.cmd.Wait()
 	code := 0
 	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
 		code = ee.ExitCode()
 	}
-	s.exit <- code
-	s.mgr.onExit(s, code)
+	s.mu.Lock()
+	s.exited, s.exitCode = true, code
+	s.mu.Unlock()
 	s.close()
+	s.mgr.onExit(s, code)
 }
 
 // broadcast fans a frame out to every attached client. A full client
@@ -264,6 +274,11 @@ func (s *ptySession) dropLocked(c *Client) {
 func (s *ptySession) AttachClient(c *Client, lastSeq uint64) ([]chunk, uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.rec.DetachedAt != nil {
+		// Someone's watching again — the detached overlay flag clears.
+		s.rec.DetachedAt = nil
+		go s.mgr.clearDetachedDB(s.rec.ID)
+	}
 	s.conns[c] = struct{}{}
 	s.gt.Request() // a view opening is an authorized on-demand scan
 	if lastSeq == 0 {
@@ -276,13 +291,6 @@ func (s *ptySession) AttachClient(c *Client, lastSeq uint64) ([]chunk, uint64) {
 	return chunks, next
 }
 
-// Attach registers a client channel.
-func (s *ptySession) Attach(c *Client) {
-	s.mu.Lock()
-	s.conns[c] = struct{}{}
-	s.mu.Unlock()
-}
-
 // Detach removes a client — the PTY keeps running.
 func (s *ptySession) Detach(c *Client) {
 	s.mu.Lock()
@@ -292,7 +300,7 @@ func (s *ptySession) Detach(c *Client) {
 	n := len(s.conns)
 	s.mu.Unlock()
 	if n == 0 {
-		s.mgr.onDetached(s.rec.ID)
+		s.mgr.onDetached(s)
 	}
 }
 
@@ -388,13 +396,82 @@ func (s *ptySession) notifyState(u StateUpdate) {
 	}
 }
 
-// ExitCode reports the process exit code once EOF has fired.
+// ExitCode reports the process exit code once EOF has fired — readable
+// by every attached client, not a consumable (splits all get eof).
 func (s *ptySession) ExitCode() *int {
-	select {
-	case c := <-s.exit:
-		return &c
-	default:
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.exited {
 		return nil
+	}
+	c := s.exitCode
+	return &c
+}
+
+// terminate runs the §03 shutdown: SIGTERM, a grace window for the child
+// to save state, then SIGKILL via the timer goroutine.
+func (s *ptySession) terminate() {
+	s.mu.Lock()
+	s.killed = true
+	s.mu.Unlock()
+	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		// Already gone — a hard kill is the honest fallback path.
+		_ = s.cmd.Process.Kill()
+		return
+	}
+	go func() {
+		select {
+		case <-s.done: // exited within the grace window
+		case <-time.After(killGrace):
+			_ = s.cmd.Process.Kill()
+		}
+	}()
+}
+
+// setDetachedAt stamps when the session lost its last client — the
+// `detached` overlay flag derives from this aging past the reconnect
+// window (state catalog: overlay, not a process state).
+func (s *ptySession) setDetachedAt(t time.Time) {
+	s.mu.Lock()
+	s.rec.DetachedAt = &t
+	s.mu.Unlock()
+}
+
+// clearDetached resets the stamp when a client attaches again.
+func (s *ptySession) clearDetached() {
+	s.mu.Lock()
+	s.rec.DetachedAt = nil
+	s.mu.Unlock()
+}
+
+// persistScrollback writes the retained output tail to
+// {data_dir}/scrollback/{id} — the read-only replay source for finished
+// rows (GET scrollback + dead-session WS attach). Runs at read end so it
+// captures the most drained bytes; the file lives as long as the row.
+func (s *ptySession) persistScrollback() {
+	if s.mgr == nil {
+		return // sessions built outside a Manager (tests) persist nothing
+	}
+	chunks, _ := s.buf.snapshot()
+	if len(chunks) == 0 {
+		return
+	}
+	path := s.mgr.scrollbackPath(s.rec.ID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		slog.Warn("scrollback persist mkdir", "session", s.rec.ID, "err", err)
+		return
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		slog.Warn("scrollback persist open", "session", s.rec.ID, "err", err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	for _, c := range chunks {
+		if _, err := f.Write(c.data); err != nil {
+			slog.Warn("scrollback persist write", "session", s.rec.ID, "err", err)
+			return
+		}
 	}
 }
 

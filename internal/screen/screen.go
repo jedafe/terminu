@@ -200,17 +200,3 @@ func (s *Screen) TakeDirty() bool {
 	s.dirty = false
 	return d
 }
-
-// MarkConsumed records the PTY seq the model has seen (resync aid).
-func (s *Screen) MarkConsumed(seq uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lastSeq = seq
-}
-
-// ConsumedSeq reports the last seq the model consumed.
-func (s *Screen) ConsumedSeq() uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lastSeq
-}

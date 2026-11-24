@@ -62,7 +62,9 @@ func (b *Broker) Check(op Op) error {
 		}
 		return nil
 	}
-	return nil
+	// Fail closed: an unknown/empty risk class is never implicitly
+	// allowed — it must be registered as a known class first.
+	return ErrRestricted
 }
 
 // Audit appends the op + result — write failure fails the op (no silent
@@ -86,5 +88,3 @@ func (b *Broker) Audit(ctx context.Context, op Op, result string) error {
 		Action: op.Action, Target: op.Target, Argv: argv, Result: result,
 	})
 }
-
-var _ = sql.ErrNoRows

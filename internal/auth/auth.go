@@ -7,13 +7,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/argon2"
@@ -39,9 +39,9 @@ type Service struct {
 }
 
 type Principal struct {
-	UserID   int64
-	Username string
-	Role     string
+	UserID   int64  `json:"user_id"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
 }
 
 func New(q *gen.Queries) *Service { return &Service{q: q} }
@@ -111,10 +111,21 @@ func (s *Service) Seed(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
+// dummyHash keeps unknown-user logins on the same argon2 path as real
+// ones — a fast return on a missing account is a user-existence oracle.
+var (
+	dummyHash     string
+	dummyHashOnce sync.Once
+)
+
 // Login checks credentials and returns a session token.
 func (s *Service) Login(ctx context.Context, username, password string) (string, error) {
 	u, err := s.q.GetUserByName(ctx, username)
 	if err != nil {
+		// Verify against a valid-format hash anyway so timing can't
+		// distinguish "no such user" from "wrong password".
+		dummyHashOnce.Do(func() { dummyHash = HashPassword("terminu-dummy") })
+		_ = verify(dummyHash, password)
 		return "", errors.New("invalid credentials")
 	}
 	if !verify(u.PasswordHash, password) {
@@ -143,7 +154,14 @@ func (s *Service) Authenticate(ctx context.Context, r *http.Request) (*Principal
 	if err != nil || c.Value == "" {
 		return nil, errors.New("unauthorized")
 	}
-	sum := sha256.Sum256([]byte(c.Value))
+	return s.AuthenticateToken(ctx, c.Value)
+}
+
+// AuthenticateToken resolves a raw session token — the WS layer re-checks
+// it on live connections so a revoked login stops authorizing input
+// (§10 per-message authz, throttled by the caller).
+func (s *Service) AuthenticateToken(ctx context.Context, token string) (*Principal, error) {
+	sum := sha256.Sum256([]byte(token))
 	row, err := s.q.GetAuthSession(ctx, hex.EncodeToString(sum[:]))
 	if err != nil {
 		return nil, errors.New("unauthorized")
@@ -176,5 +194,3 @@ func ClearCookie(w http.ResponseWriter) {
 		Name: CookieName, Value: "", Path: "/", MaxAge: -1,
 	})
 }
-
-var _ = sql.ErrNoRows

@@ -92,6 +92,7 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 		return // session already dead — nothing to write or emit
 	}
 	ctx.FG = fg
+	ctx.Trigger = e.Reason.String()
 
 	b.mu.Lock()
 	if fg.PID != 0 && !fg.Same(b.fg) {
@@ -125,6 +126,7 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 		b.mu.Unlock()
 		return // nothing changed — no write, no emit
 	}
+	prev := b.lastUp.State
 	b.lastKey = key
 	b.lastUp = StateUpdate{State: st, Match: m, At: time.Now()}
 	b.mu.Unlock()
@@ -135,6 +137,7 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 
 	// Catalog transition rule: notify on *detected* states — agent.state
 	// feeds the needs-you view (kind only rides waiting-for-input).
+	// `alert` is the same transitions with the edge that fired them.
 	if st == domain.StateWaitingForInput || st == domain.StateDone || st == domain.StateError {
 		r.m.events.Pub(Event{
 			Type:       "agent.state",
@@ -144,7 +147,35 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 			Kind:       kind,
 			Confidence: confidence,
 		})
+		r.m.events.Pub(Event{
+			Type:       "alert",
+			SessionID:  s.rec.ID,
+			Level:      alertLevel(st),
+			Transition: transition(prev, st),
+		})
 	}
+}
+
+// alertLevel grades the catalog `alert` frame — waits need a human,
+// errors need attention, done is informational.
+func alertLevel(st domain.SessionState) string {
+	switch st {
+	case domain.StateError:
+		return "warn"
+	case domain.StateWaitingForInput:
+		return "action"
+	default:
+		return "info"
+	}
+}
+
+// transition renders "prev→next" for the alert frame; the first
+// transition of a session has no prior emitted state.
+func transition(prev, st domain.SessionState) string {
+	if prev == "" || prev == st {
+		return string(st)
+	}
+	return string(prev) + "→" + string(st)
 }
 
 func (r *registry) match(fg proc.Info) adapter.Adapter {
@@ -207,6 +238,20 @@ func (r *registry) fgName(id string) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.fg.Name()
+}
+
+// lastState is the last emitted detected state — read before unwatch so
+// the exit alert can name the transition it ended.
+func (r *registry) lastState(id string) domain.SessionState {
+	r.mu.Lock()
+	b, ok := r.bound[id]
+	r.mu.Unlock()
+	if !ok {
+		return ""
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lastUp.State
 }
 
 // current returns the last emitted transition — session sockets resync

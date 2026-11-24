@@ -8,11 +8,12 @@ import (
 	"github.com/jedafe/terminu/internal/domain"
 )
 
-// Event is one /ws/events broadcast frame — lifecycle events ride
-// Type/SessionID/Session; agent.state (catalog) carries the detection
-// fields below.
+// Event is one /ws/events broadcast frame — every frame carries `t`
+// per the websocket-message-catalog. Lifecycle events ride
+// SessionID/Session; agent.state carries the detection fields; alert
+// carries Level + Transition.
 type Event struct {
-	Type      string          `json:"type"`
+	Type      string          `json:"t"`
 	SessionID string          `json:"session_id,omitempty"`
 	Session   *domain.Session `json:"session,omitempty"`
 
@@ -21,6 +22,10 @@ type Event struct {
 	State      domain.SessionState `json:"state,omitempty"`
 	Kind       domain.WaitKind     `json:"kind,omitempty"`
 	Confidence domain.Confidence   `json:"confidence,omitempty"`
+
+	// alert frame (catalog): {level, session_id, transition}.
+	Level      string `json:"level,omitempty"`
+	Transition string `json:"transition,omitempty"`
 }
 
 // EventBus fans events to every subscriber — read-only broadcast socket.

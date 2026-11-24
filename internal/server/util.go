@@ -5,7 +5,9 @@ import (
 	"time"
 )
 
-const Version = "0.1.0-phase1"
+// Version reports the running build — overridden at release time via
+// -ldflags "-X github.com/jedafe/terminu/internal/server.Version=vX.Y.Z".
+var Version = "0.1.0-phase1"
 
 func parseID(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
