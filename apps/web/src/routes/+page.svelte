@@ -22,10 +22,12 @@
 	} from '$lib/stores';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
+	import InputLine from '$lib/components/InputLine.svelte';
 
 	let surfaces: Record<string, TerminalSurface | undefined> = {};
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
-	let now = Date.now();
+	let now = $state(Date.now());
+	let kbdOpen = $state(false);
 
 	onMount(() => {
 		const tick = setInterval(() => (now = Date.now()), 15000);
@@ -131,6 +133,13 @@
 		if (ap) surfaces[ap]?.inject(seq);
 	}
 
+	// InputLine path — must not steal focus back to xterm's textarea or
+	// the system keyboard jumps between fields.
+	function injectRaw(seq: string) {
+		const ap = $activePane;
+		if (ap) surfaces[ap]?.send(seq);
+	}
+
 	async function paste() {
 		try {
 			const t = await navigator.clipboard.readText();
@@ -161,17 +170,29 @@
 		</button>
 		<div class="panes">
 			{#each $panes as p (p.id)}
-				<button
+				<div
 					class="pane-tab"
 					class:active={$activePane === p.id}
+					role="button"
+					tabindex="0"
 					onclick={() => {
 						activePane.set(p.id);
 						scheduleSave();
 					}}
+					onkeydown={() => activePane.set(p.id)}
 				>
 					{#if needsYouId(p.sessionId)}<span class="tabdot needs"></span>{/if}
 					{label(sessionOf(p.sessionId))}
-				</button>
+					<button
+						class="tabx"
+						aria-label="close tab"
+						onclick={(e) => {
+							e.stopPropagation();
+							closePane(p.id);
+							scheduleSave();
+						}}>✕</button
+					>
+				</div>
 			{/each}
 			<button class="tb add" aria-label="new session" onclick={spawn}>+</button>
 		</div>
@@ -229,12 +250,15 @@
 	<!-- terminal grid -->
 	<main class="grid" class:single={$panes.length <= 1}>
 		{#each $panes as p (p.id)}
-			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
 			<section
 				class="pane"
 				class:focused={$activePane === p.id}
-				role="group"
+				role="button"
+				tabindex="0"
 				onclick={() => activePane.set(p.id)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') activePane.set(p.id);
+				}}
 			>
 				{#if $panes.length > 1}
 					<div class="ptitle">
@@ -258,7 +282,10 @@
 		{/if}
 	</main>
 
-	<KeyBar oninject={inject} onpaste={paste} />
+	{#if kbdOpen}
+		<InputLine oninject={injectRaw} onclose={() => (kbdOpen = false)} />
+	{/if}
+	<KeyBar oninject={inject} onpaste={paste} ontogglekbd={() => (kbdOpen = !kbdOpen)} kbdOn={kbdOpen} />
 </div>
 
 <!-- one session row — dot, name + tool badge, state/wait subline, and the
@@ -329,19 +356,33 @@
 	}
 	.pane-tab {
 		height: 38px;
+		display: flex;
+		align-items: center;
 		border: 1px solid #22304a;
 		border-radius: 9px;
 		background: #11161f;
 		color: #6b7f9e;
 		font: 13px ui-monospace, monospace;
-		padding: 0 14px;
+		padding: 0 6px 0 14px;
 		white-space: nowrap;
 		flex-shrink: 0;
+		cursor: pointer;
 	}
 	.pane-tab.active {
 		background: #1c2a44;
 		border-color: #4cc9f0;
 		color: #e6f2ff;
+	}
+	.tabx {
+		border: 0;
+		background: transparent;
+		color: #4a5568;
+		font-size: 11px;
+		padding: 6px 7px;
+		margin-left: 4px;
+	}
+	.tabx:active {
+		color: #ff8080;
 	}
 	.mode.on {
 		background: #1f4d3a;

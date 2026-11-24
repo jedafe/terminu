@@ -3,7 +3,17 @@
      path as physical keys. Ctrl/Alt are sticky (one tap arms, next key
      sends modified, then disarms). -->
 <script lang="ts">
-	let { oninject, onpaste }: { oninject: (seq: string) => void; onpaste: () => void } = $props();
+	let {
+		oninject,
+		onpaste,
+		ontogglekbd,
+		kbdOn = false
+	}: {
+		oninject: (seq: string) => void;
+		onpaste: () => void;
+		ontogglekbd?: () => void;
+		kbdOn?: boolean;
+	} = $props();
 
 	let ctrl = $state(false);
 	let alt = $state(false);
@@ -44,6 +54,15 @@
 </script>
 
 <div class="keybar">
+	{#if ontogglekbd}
+		<button
+			class="k mod"
+			class:armed={kbdOn}
+			title="type — opens the input line (reliable mobile input)"
+			onpointerdown={(e) => e.preventDefault()}
+			onclick={ontogglekbd}>⌨</button
+		>
+	{/if}
 	<button class="k mod" class:armed={ctrl} onclick={() => (ctrl = !ctrl)}>Ctrl</button>
 	<button class="k mod" class:armed={alt} onclick={() => (alt = !alt)}>Alt</button>
 	{#each keys as k}

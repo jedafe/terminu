@@ -121,6 +121,11 @@
 		}
 	}
 
+	// Raw input path — no focus steal (the InputLine owns the keyboard).
+	export function send(seq: string) {
+		client?.send(seq);
+	}
+
 	// Called by KeyBar — same path as physical input.
 	export function inject(seq: string) {
 		client?.send(seq);
