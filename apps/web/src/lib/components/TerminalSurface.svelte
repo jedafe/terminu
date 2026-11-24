@@ -11,7 +11,11 @@
 	import { touchMode } from '$lib/stores';
 	import '@xterm/xterm/css/xterm.css';
 
-	let { sessionId, active = false }: { sessionId: string; active?: boolean } = $props();
+	let {
+		sessionId,
+		active = false,
+		onrequestinput
+	}: { sessionId: string; active?: boolean; onrequestinput?: () => void } = $props();
 
 	let el: HTMLDivElement;
 	let term: Terminal;
@@ -132,6 +136,7 @@
 	const LP_MOVE = 12;
 	let lpTimer: ReturnType<typeof setTimeout> | undefined;
 	let lpPt: { x: number; y: number } | null = null;
+	let lpAt = 0;
 	let lastRightClick = 0;
 
 	function cancelLp() {
@@ -182,16 +187,30 @@
 		}
 	}
 
+	// Short tap: a TUI holding the mouse owns the click (xterm's native
+	// touch path already reported it). Otherwise the tap asks for the
+	// input line — the terminal's whole surface is the on-ramp to typing.
+	function tap() {
+		if (get(touchMode) === 'mouse' && (term?.modes?.mouseTrackingMode ?? 'none') !== 'none') return;
+		onrequestinput?.();
+	}
+
 	function armTouchLayer() {
 		el.addEventListener('pointerdown', (e) => {
 			if (e.pointerType !== 'touch') return;
 			lpPt = { x: e.clientX, y: e.clientY };
+			lpAt = Date.now();
 			lpTimer = setTimeout(lpFire, LP_MS);
 		});
 		el.addEventListener('pointermove', (e) => {
 			if (lpPt && Math.hypot(e.clientX - lpPt.x, e.clientY - lpPt.y) > LP_MOVE) cancelLp();
 		});
-		el.addEventListener('pointerup', cancelLp);
+		// lpPt surviving to pointerup = press shorter than LP_MS with no
+		// move (long-press and scroll both clear it first).
+		el.addEventListener('pointerup', (e) => {
+			if (e.pointerType === 'touch' && lpPt && Date.now() - lpAt < LP_MS) tap();
+			cancelLp();
+		});
 		el.addEventListener('pointercancel', cancelLp);
 
 		el.addEventListener('contextmenu', (e) => {
@@ -497,6 +516,18 @@
 		display: flex;
 		gap: 6px;
 		align-items: center;
+	}
+	/* Desktop: the tools float over scrollback — reveal on hover only.
+	   Touch has no hover, so they stay put there. */
+	@media (hover: hover) {
+		.tools {
+			opacity: 0;
+			transition: opacity 0.15s;
+		}
+		.tsurface:hover .tools,
+		.tools.open {
+			opacity: 1;
+		}
 	}
 	.tool {
 		min-width: 44px;

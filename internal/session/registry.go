@@ -34,6 +34,12 @@ type binding struct {
 	fg      proc.Info
 	lastKey string      // dedup key of last emitted match
 	lastUp  StateUpdate // last emitted transition — session sockets resync from it
+	// Alert re-arm state: a waiting alert is persisted once per wait
+	// episode. Flapping working↔waiting during a redraw can't respawn
+	// rows — re-arm only after the session holds a non-waiting state
+	// for TU_ALERT_REARM_S.
+	waitAlertedAt time.Time
+	unwaitSince   time.Time
 }
 
 func newRegistry(m *Manager) *registry {
@@ -137,7 +143,8 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 
 	// Catalog transition rule: notify on *detected* states — agent.state
 	// feeds the needs-you view (kind only rides waiting-for-input).
-	// `alert` is the same transitions with the edge that fired them.
+	// `alert` rows persist only the EDGE (prev != st): a repeat detect of
+	// the same wait is not a transition (§05).
 	if st == domain.StateWaitingForInput || st == domain.StateDone || st == domain.StateError {
 		r.m.events.Pub(Event{
 			Type:       "agent.state",
@@ -147,8 +154,45 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 			Kind:       kind,
 			Confidence: confidence,
 		})
-		r.m.alert(s.rec.ID, fg.Name(), prev, st, kind, confidence)
+		if b.alertEdge(prev, st, time.Now(), r.m.alertRearm()) {
+			r.m.alert(s.rec.ID, fg.Name(), prev, st, kind, confidence)
+		}
+		return
 	}
+
+	// Non-waiting emit: sustained non-waiting re-arms the waiting alert.
+	b.alertEdge(prev, st, time.Now(), r.m.alertRearm())
+}
+
+// alertEdge decides whether this transition persists an alert row and
+// keeps the re-arm bookkeeping. An alert fires on a real edge (st !=
+// prev); for waiting-for-input it fires once per wait episode — re-arm
+// only after a non-waiting dwell of at least rearm, so redraw flaps
+// can't respawn rows. Called for every emitted state change.
+func (b *binding) alertEdge(prev, st domain.SessionState, now time.Time, rearm time.Duration) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if st == domain.StateWaitingForInput {
+		b.unwaitSince = time.Time{}
+		if !b.waitAlertedAt.IsZero() {
+			return false // already alerted this wait episode
+		}
+		if st != prev {
+			b.waitAlertedAt = now
+			return true
+		}
+		return false
+	}
+	if st == domain.StateDone || st == domain.StateError {
+		return st != prev
+	}
+	if b.unwaitSince.IsZero() {
+		b.unwaitSince = now
+	}
+	if !b.waitAlertedAt.IsZero() && now.Sub(b.unwaitSince) >= rearm {
+		b.waitAlertedAt = time.Time{}
+	}
+	return false
 }
 
 // alertLevel grades the catalog `alert` frame — waits need a human,

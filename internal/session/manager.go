@@ -451,6 +451,13 @@ func (m *Manager) isDetached(at *time.Time) bool {
 	return at != nil && time.Since(*at) > time.Duration(m.cfg.ReconnectWindowSec)*time.Second
 }
 
+// alertRearm is the dwell a session must hold a non-waiting state
+// before its next waiting transition may persist another alert row
+// (TU_ALERT_REARM_S) — redraw flaps never re-arm.
+func (m *Manager) alertRearm() time.Duration {
+	return time.Duration(m.cfg.AlertRearmSec) * time.Second
+}
+
 func (m *Manager) setState(ctx context.Context, id string, st domain.SessionState, kind, conf, ev string) error {
 	if err := m.q.UpdateSessionState(ctx, gen.UpdateSessionStateParams{State: string(st), ID: id}); err != nil {
 		return err

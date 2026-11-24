@@ -320,6 +320,7 @@
 						bind:this={surfaces[p.id]}
 						sessionId={p.sessionId}
 						active={$activePane === p.id}
+						onrequestinput={() => (kbdOpen = true)}
 					/>
 				</div>
 			</section>

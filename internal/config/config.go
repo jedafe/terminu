@@ -27,6 +27,7 @@ type Config struct {
 	ReconnectWindowSec int
 	QuiescenceMS       int
 	ScanBottomRows     int
+	AlertRearmSec      int
 	ScreenScrollback   int
 	LLMEnabled         bool
 	LLMProvider        string
@@ -80,6 +81,7 @@ func Load() (*Config, error) {
 		ReconnectWindowSec: 300,
 		QuiescenceMS:       400,
 		ScanBottomRows:     12,
+		AlertRearmSec:      5,
 		ScreenScrollback:   1000,
 		DockerSocket:       "/var/run/docker.sock",
 		SFTPPort:           2022,
@@ -107,6 +109,7 @@ func Load() (*Config, error) {
 	c.ReconnectWindowSec = getint("TU_RECONNECT_WINDOW_S", c.ReconnectWindowSec)
 	c.QuiescenceMS = getint("TU_QUIESCENCE_MS", c.QuiescenceMS)
 	c.ScanBottomRows = getint("TU_SCAN_BOTTOM_ROWS", c.ScanBottomRows)
+	c.AlertRearmSec = getint("TU_ALERT_REARM_S", c.AlertRearmSec)
 	c.ScreenScrollback = getint("TU_SCREEN_SCROLLBACK_ROWS", c.ScreenScrollback)
 	c.LLMEnabled = getbool("TU_LLM_ENABLED", c.LLMEnabled)
 	c.LLMProvider = getenv("TU_LLM_PROVIDER", c.LLMProvider)
@@ -203,6 +206,8 @@ func (c *Config) setToml(key, val string) {
 		c.QuiescenceMS, _ = strconv.Atoi(val)
 	case "scan.bottom_rows":
 		c.ScanBottomRows, _ = strconv.Atoi(val)
+	case "alert.rearm_s":
+		c.AlertRearmSec, _ = strconv.Atoi(val)
 	case "screen.scrollback_rows":
 		c.ScreenScrollback, _ = strconv.Atoi(val)
 	case "llm.enabled":
