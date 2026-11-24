@@ -314,6 +314,12 @@
 		sendResize();
 	}
 
+	// Drop-and-reattach the session socket — server replays missed
+	// frames; also the visible "refresh did something" signal.
+	export function resync() {
+		client?.resync();
+	}
+
 	$effect(() => {
 		if (active) focus();
 	});

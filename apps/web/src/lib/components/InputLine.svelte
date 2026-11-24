@@ -14,6 +14,30 @@
 	let focused = $state(false);
 	let hasText = $state(false);
 
+	const coarse = () =>
+		typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
+	// "Always active" on touch devices: the InputLine is the typing
+	// surface — pull focus back on every blur except a deliberate move
+	// to another field (search box, prompt reply) or the session drawer.
+	// xterm's own helper textarea does NOT count — its focus is the
+	// unreliable path this component exists to replace.
+	function onBlur() {
+		focused = false;
+		if (!coarse()) return;
+		const el = document.activeElement as HTMLElement | null;
+		if (el && el !== document.body) {
+			if (el.closest('.drawer')) return;
+			if (
+				el.matches(
+					'input:not(.xterm-helper-textarea), textarea:not(.xterm-helper-textarea), [contenteditable="true"]'
+				)
+			)
+				return;
+		}
+		requestAnimationFrame(() => inp?.focus());
+	}
+
 	onMount(() => {
 		inp.focus();
 		// Mobile browsers refuse programmatic focus without a gesture —
@@ -130,7 +154,7 @@
 		spellcheck="false"
 		enterkeyhint="send"
 		onfocus={() => (focused = true)}
-		onblur={() => (focused = false)}
+		onblur={onBlur}
 	/>
 	{#if onclose}
 		<button

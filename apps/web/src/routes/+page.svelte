@@ -78,10 +78,15 @@
 
 	function fireRefresh() {
 		ptrBusy = true;
+		// Reattach every open session socket — server replays missed
+		// frames (repaints the terminal, repairs a stuck connection).
+		for (const s of Object.values(surfaces)) s?.resync();
 		void (async () => {
+			const t0 = Date.now();
 			await refreshSessions();
 			await Promise.allSettled([refreshAgents(), refreshAlerts()]);
-			ptrBusy = false;
+			// keep the chip visible a beat so the refresh reads as done
+			setTimeout(() => (ptrBusy = false), Math.max(0, 600 - (Date.now() - t0)));
 		})();
 	}
 

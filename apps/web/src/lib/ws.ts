@@ -147,6 +147,17 @@ export class SessionClient {
 			/* already gone */
 		}
 	}
+
+	// Force a resync: drop the socket — the close handler reconnects
+	// with last_seq and the server replays anything missed.
+	resync() {
+		if (this.closed) return;
+		try {
+			this.ws?.close();
+		} catch {
+			/* already gone */
+		}
+	}
 }
 
 // Events socket — session lifecycle broadcast. onOpen fires on every
