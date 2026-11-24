@@ -32,9 +32,12 @@
 	let now = $state(Date.now());
 	// Touch-first devices start with the input line open — the on-screen
 	// surface is their only typing path.
-	let kbdOpen = $state(
-		typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
-	);
+	const coarsePtr = () =>
+		typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+	let kbdOpen = $state(coarsePtr());
+	// On touch the bar stays ghosted (armed but invisible) until ⌨
+	// reveals it — the input keeps focus either way.
+	let barVisible = $state(false);
 	// The shell tracks the *visual* viewport, not 100dvh: on mobile the
 	// keyboard shrinks the visual viewport without always resizing the
 	// layout one (iOS), and without this the keybar sits under the
@@ -426,9 +429,18 @@
 	</main>
 
 	{#if kbdOpen}
-		<InputLine oninject={injectRaw} onclose={() => (kbdOpen = false)} />
+		<InputLine
+			oninject={injectRaw}
+			ghost={coarsePtr() && !barVisible}
+			onclose={() => (coarsePtr() ? (barVisible = false) : (kbdOpen = false))}
+		/>
 	{/if}
-	<KeyBar oninject={inject} onpaste={paste} ontogglekbd={() => (kbdOpen = !kbdOpen)} kbdOn={kbdOpen} />
+	<KeyBar
+		oninject={inject}
+		onpaste={paste}
+		ontogglekbd={() => (coarsePtr() ? (barVisible = !barVisible) : (kbdOpen = !kbdOpen))}
+		kbdOn={coarsePtr() ? barVisible : kbdOpen}
+	/>
 </div>
 
 <!-- one session row — dot, name + tool badge, state/wait subline, and the
@@ -463,6 +475,7 @@
 
 <style>
 	.shell {
+		position: relative;
 		height: 100dvh;
 		display: flex;
 		flex-direction: column;

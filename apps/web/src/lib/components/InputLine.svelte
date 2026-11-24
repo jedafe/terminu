@@ -7,7 +7,11 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { kbdMods, modKey, disarmMods } from '$lib/stores';
-	let { oninject, onclose }: { oninject: (seq: string) => void; onclose?: () => void } = $props();
+	let {
+		oninject,
+		onclose,
+		ghost = false
+	}: { oninject: (seq: string) => void; onclose?: () => void; ghost?: boolean } = $props();
 
 	let inp: HTMLInputElement;
 	let prev = '';
@@ -129,6 +133,7 @@
 </script>
 
 <form
+	class:ghost
 	class="iline"
 	onsubmit={(e) => {
 		e.preventDefault();
@@ -218,5 +223,31 @@
 		color: #9db2ce;
 		font-size: 14px;
 		flex-shrink: 0;
+	}
+	/* Ghost: input stays mounted + focused (the typing path stays
+	   armed) but the form costs zero screen space. height/opacity —
+	   not display/visibility — keep it focusable. Keystrokes already
+	   echo in the terminal, so nothing visible is lost. */
+	form.iline.ghost {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 1px;
+		padding: 0;
+		border: none;
+		pointer-events: none;
+		z-index: -1;
+	}
+	form.iline.ghost .iin {
+		height: 1px;
+		opacity: 0;
+		padding: 0;
+		border: none;
+		caret-color: transparent;
+	}
+	form.iline.ghost .fakecaret,
+	form.iline.ghost .ix {
+		display: none;
 	}
 </style>
