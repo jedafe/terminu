@@ -169,10 +169,16 @@ export async function restoreWorkspace() {
 	try {
 		const layout = JSON.parse(ws.layout || '{}') as { panes?: Pane[]; active?: string };
 		const live = new Set(get(sessions).map((s) => s.id));
-		const restored = (layout.panes ?? []).filter((p) => live.has(p.sessionId));
+		const seen = new Set<string>();
+		const restored = (layout.panes ?? []).filter(
+			(p) => live.has(p.sessionId) && !seen.has(p.id) && (seen.add(p.id), true)
+		);
 		if (restored.length) {
 			panes.set(restored);
-			paneSeq = restored.length;
+			// Seed past the max restored suffix — restored ids keep their
+			// saved names (p4, p9…) so counting entries undershoots and
+			// the next newPane re-mints a live id (each_key_duplicate).
+			paneSeq = restored.reduce((m, p) => Math.max(m, parseInt(p.id.slice(1), 10) || 0), 0);
 			activePane.set(layout.active ?? restored[0].id);
 		}
 	} catch {
