@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"strings"
 	"sync"
 	"time"
 
@@ -162,7 +163,17 @@ func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, 
 			cmd.Dir = rec.Cwd
 		}
 	}
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	// Child env: daemon config stays daemon-side — TU_* vars are our
+	// secrets (admin password, session secret, LLM key); spawning with
+	// the full environ would expose them via `env` in every session.
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "TU_") {
+			continue
+		}
+		env = append(env, e)
+	}
+	cmd.Env = append(env, "TERM=xterm-256color", "COLORTERM=truecolor")
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: uint16(rec.Cols), Rows: uint16(rec.Rows),
 	})
@@ -291,13 +302,37 @@ func (s *ptySession) Write(p []byte) error {
 
 // Resize propagates SIGWINCH to the PTY child and the screen model.
 func (s *ptySession) Resize(cols, rows int) {
+	s.mu.Lock()
 	s.rec.Cols, s.rec.Rows = cols, rows
+	s.mu.Unlock()
 	s.scr.Resize(cols, rows)
 	_ = pty.Setsize(s.ptmx, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	// Layout changed → the prompt may sit outside the old scan scope.
+	// A resize is view-driven → authorized on-demand scan.
+	s.gt.Request()
 }
 
-// Rec exposes the session record (read-only) for control frames.
-func (s *ptySession) Rec() *domain.Session { return s.rec }
+// Rec returns a copy of the session record — the struct mutates under
+// s.mu (state/cols/rows/exit), so callers never see it mid-write.
+func (s *ptySession) Rec() *domain.Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := *s.rec
+	return &c
+}
+
+func (s *ptySession) setRecState(st domain.SessionState) {
+	s.mu.Lock()
+	s.rec.State = st
+	s.mu.Unlock()
+}
+
+func (s *ptySession) setRecDone(st domain.SessionState, code int) {
+	s.mu.Lock()
+	s.rec.State = st
+	s.rec.ExitCode = &code
+	s.mu.Unlock()
+}
 
 // Foreground resolves the process owning this PTY's foreground group —
 // the adapter-binding routing key (spec §2). Read on gate ticks only.

@@ -186,6 +186,10 @@ func (s *Server) spawnSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if aerr := s.br.Audit(r.Context(), op, res); aerr != nil {
 		slog.Error("audit write failed", "err", aerr)
+		// ADR-004: no silent privileged actions — a failed audit row is a
+		// loud error, never a quiet success.
+		writeErr(w, 500, "internal", "audit write failed")
+		return
 	}
 	if err != nil {
 		if errors.Is(err, session.ErrLimit) {
@@ -275,7 +279,11 @@ func (s *Server) killSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		res = "error"
 	}
-	_ = s.br.Audit(r.Context(), op, res)
+	if aerr := s.br.Audit(r.Context(), op, res); aerr != nil {
+		slog.Error("audit write failed", "err", aerr)
+		writeErr(w, 500, "internal", "audit write failed")
+		return
+	}
 	if err != nil {
 		writeErr(w, 500, "internal", err.Error())
 		return

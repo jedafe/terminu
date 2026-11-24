@@ -152,6 +152,16 @@ export function wireEvents() {
 			});
 			return; // state change alone doesn't need a session refetch
 		}
-		void refreshSessions();
+		void refreshSessions().then(() => {
+			// Prune dead ids + re-sync ordering fields (agent.state events
+			// can drop under load — the agents view is the source of truth).
+			const live = new Set(get(sessions).map((s) => s.id));
+			agentStates.update((m) => {
+				const out: Record<string, AgentInfo> = {};
+				for (const [k, v] of Object.entries(m)) if (live.has(k)) out[k] = v;
+				return out;
+			});
+			void refreshAgents().catch(() => {});
+		});
 	});
 }

@@ -87,7 +87,10 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 			fg = f
 		}
 	}
-	b := r.bindingFor(s.rec.ID)
+	b := r.bindingFor(s)
+	if b == nil {
+		return // session already dead — nothing to write or emit
+	}
 	ctx.FG = fg
 
 	b.mu.Lock()
@@ -127,7 +130,7 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 	b.mu.Unlock()
 
 	_ = r.m.setState(context.Background(), s.rec.ID, st, string(kind), string(confidence), evidence)
-	s.rec.State = st
+	s.setRecState(st)
 	s.notifyState(b.lastUp)
 
 	// Catalog transition rule: notify on *detected* states — agent.state
@@ -156,13 +159,22 @@ func (r *registry) match(fg proc.Info) adapter.Adapter {
 	return nil
 }
 
-func (r *registry) bindingFor(id string) *binding {
+// bindingFor returns the session's binding, creating it on first use.
+// nil when the session is already dead — a handle() racing unwatch()
+// must not resurrect a deleted map entry (that entry would never be
+// removed: the consume goroutine is already gone).
+func (r *registry) bindingFor(s *ptySession) *binding {
+	select {
+	case <-s.done:
+		return nil
+	default:
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	b, ok := r.bound[id]
+	b, ok := r.bound[s.rec.ID]
 	if !ok {
 		b = &binding{}
-		r.bound[id] = b
+		r.bound[s.rec.ID] = b
 	}
 	return b
 }

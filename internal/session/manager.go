@@ -103,13 +103,13 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 		rec.State = domain.StateError
 		return rec, fmt.Errorf("spawn: %w", err)
 	}
+	rec.State = domain.StateWorking
+	_ = m.setState(ctx, rec.ID, domain.StateWorking, "", "", "")
 	m.mu.Lock()
 	m.live[rec.ID] = ps
 	m.mu.Unlock()
 	m.reg.watch(ps) // detection consumer starts with the PTY
-	rec.State = domain.StateWorking
-	_ = m.setState(ctx, rec.ID, domain.StateWorking, "", "", "")
-	m.events.Pub(Event{Type: "session.added", Session: rec})
+	m.events.Pub(Event{Type: "session.added", Session: ps.Rec()})
 	return rec, nil
 }
 
@@ -204,10 +204,9 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	_ = m.q.UpdateSessionExit(ctx, gen.UpdateSessionExitParams{
 		State: string(st), ExitCode: ec, ID: s.rec.ID})
 	_ = m.setState(ctx, s.rec.ID, st, "", "", "")
-	s.rec.State = st
-	s.rec.ExitCode = &code
-	s.notifyState(StateUpdate{State: st})
-	m.events.Pub(Event{Type: "session.exited", SessionID: s.rec.ID, Session: s.rec})
+	s.setRecDone(st, code)
+	s.notifyState(StateUpdate{State: st, At: time.Now()})
+	m.events.Pub(Event{Type: "session.exited", SessionID: s.rec.ID, Session: s.Rec()})
 	// *→done|error is a catalog notify transition — agent.state carries it.
 	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, Process: fgName, State: st})
 }
@@ -242,7 +241,7 @@ func (m *Manager) Agents() []AgentView {
 		u := s.CurrentState()
 		tool, _ := m.reg.Bound(s.rec.ID)
 		v := AgentView{
-			Session: s.rec, Process: m.reg.fgName(s.rec.ID),
+			Session: s.Rec(), Process: m.reg.fgName(s.rec.ID),
 			Tool: tool, State: u.State, Since: u.At,
 		}
 		if u.Match != nil {

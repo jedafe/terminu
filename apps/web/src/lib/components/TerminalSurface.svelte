@@ -24,8 +24,6 @@
 	let maybeWaiting = $state(false);
 	let freeReply = $state('');
 
-	const encoder = new TextEncoder();
-
 	onMount(() => {
 		term = new Terminal({
 			fontFamily: 'ui-monospace, "JetBrains Mono", Menlo, monospace',
@@ -175,7 +173,7 @@
 				{prompt.title}
 				<button class="px" aria-label="dismiss" onclick={() => (prompt = null)}>✕</button>
 			</div>
-			{#if prompt.kind === 'freetext' || prompt.options.length === 0}
+			{#if prompt.kind === 'freetext' || (prompt.options?.length ?? 0) === 0}
 				<form
 					class="pfree"
 					onsubmit={(e) => {

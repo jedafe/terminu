@@ -150,20 +150,22 @@ func (s *Server) wsSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeDone := make(chan struct{})
 	go func() {
-		defer close(writeDone)
 		ups := sess.StateUpdates()
 		for {
 			select {
 			case frame, ok := <-client.C:
 				if !ok {
-					// PTY closed → eof.
-					code := 0
-					if sess.ExitCode() != nil {
-						code = *sess.ExitCode()
+					if code := sess.ExitCode(); code != nil {
+						// PTY closed → eof.
+						_ = sendCtl(c, eofMsg{Type: "eof", ExitCode: *code})
+						return
 					}
-					_ = sendCtl(c, eofMsg{Type: "eof", ExitCode: code})
+					// Session alive but this client was dropped as a slow
+					// consumer — tell it so it reconnects + resyncs instead
+					// of showing a dead "eof" state.
+					_ = sendCtl(c, errMsg{Type: "error", Code: "dropped", Message: "slow consumer — reconnect to resync"})
+					_ = c.Close(websocket.StatusTryAgainLater, "slow consumer")
 					return
 				}
 				wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

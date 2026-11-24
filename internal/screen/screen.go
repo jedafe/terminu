@@ -94,13 +94,20 @@ func (s *Screen) Cursor() (x, y int, visible bool) {
 }
 
 // Size returns the grid dimensions.
-func (s *Screen) Size() (cols, rows int) { return s.cols, s.rows }
+func (s *Screen) Size() (cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cols, s.rows
+}
 
 // Text returns the rune content of live rows [y0, y1) — the region
-// adapters scan.
+// adapters scan. Out-of-range bounds clamp into the grid.
 func (s *Screen) Text(y0, y1 int) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if y0 < 0 {
+		y0 = 0
+	}
 	var b strings.Builder
 	for y := y0; y < y1 && y < s.rows; y++ {
 		b.WriteString(s.rowTextLocked(y))
@@ -195,7 +202,15 @@ func (s *Screen) TakeDirty() bool {
 }
 
 // MarkConsumed records the PTY seq the model has seen (resync aid).
-func (s *Screen) MarkConsumed(seq uint64) { s.lastSeq = seq }
+func (s *Screen) MarkConsumed(seq uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastSeq = seq
+}
 
 // ConsumedSeq reports the last seq the model consumed.
-func (s *Screen) ConsumedSeq() uint64 { return s.lastSeq }
+func (s *Screen) ConsumedSeq() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastSeq
+}
