@@ -1,8 +1,10 @@
 <!-- Ref: .teos/sections/11-web-ui.md — KeyBar: the missing-modifier layer.
      All targets ≥44px; every key funnels through inject() → same input
-     path as physical keys. Ctrl/Alt are sticky (one tap arms, next key
-     sends modified, then disarms). -->
+     path as physical keys. Ctrl/Shift/Alt are sticky — one tap arms,
+     the next key from either surface sends modified, then disarms. -->
 <script lang="ts">
+	import { kbdMods, modKey, disarmMods } from '$lib/stores';
+
 	let {
 		oninject,
 		onpaste,
@@ -15,23 +17,16 @@
 		kbdOn?: boolean;
 	} = $props();
 
-	let ctrl = $state(false);
-	let alt = $state(false);
-
-	function fire(seq: string) {
-		if (ctrl) seq = toCtrl(seq);
-		if (alt) seq = '\x1b' + seq;
-		oninject(seq);
-		ctrl = false;
-		alt = false;
+	// Sticky modifiers live in kbdMods so armed state is shared with the
+	// InputLine — keybar-Ctrl + keyboard-c sends \x03. One keypress from
+	// either surface consumes them.
+	function toggle(k: 'ctrl' | 'alt' | 'shift') {
+		kbdMods.update((m) => ({ ...m, [k]: !m[k] }));
 	}
 
-	function toCtrl(seq: string): string {
-		if (seq.length === 1) {
-			const c = seq.toLowerCase().charCodeAt(0);
-			if (c >= 97 && c <= 122) return String.fromCharCode(c - 96);
-		}
-		return seq;
+	function fire(seq: string) {
+		oninject(modKey(seq));
+		disarmMods();
 	}
 
 	// ⏎ sends Alt+Enter (\x1b\r) — devin's documented multiline binding
@@ -68,14 +63,17 @@
 			onclick={ontogglekbd}>⌨</button
 		>
 	{/if}
-	<button class="k mod" class:armed={ctrl} onclick={() => (ctrl = !ctrl)}>Ctrl</button>
-	<button class="k mod" class:armed={alt} onclick={() => (alt = !alt)}>Alt</button>
+	<!-- Every button swallows pointerdown's focus move — blurring the
+	     InputLine would drop the OS keyboard mid-combo. -->
+	<button class="k mod" class:armed={$kbdMods.ctrl} onpointerdown={(e) => e.preventDefault()} onclick={() => toggle('ctrl')}>Ctrl</button>
+	<button class="k mod" class:armed={$kbdMods.shift} onpointerdown={(e) => e.preventDefault()} onclick={() => toggle('shift')}>Shift</button>
+	<button class="k mod" class:armed={$kbdMods.alt} onpointerdown={(e) => e.preventDefault()} onclick={() => toggle('alt')}>Alt</button>
 	{#each keys as k}
 		<button class="k" onpointerdown={(e) => e.preventDefault()} onclick={() => fire(k.seq)}
 			>{k.label}</button
 		>
 	{/each}
-	<button class="k" onclick={onpaste}>Paste</button>
+	<button class="k" onpointerdown={(e) => e.preventDefault()} onclick={onpaste}>Paste</button>
 </div>
 
 <style>

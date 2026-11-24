@@ -5,12 +5,27 @@
      \r + clear, Backspace on empty → \x7f (PTY buffer), Tab → \t, Esc → \x1b. -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
+	import { kbdMods, modKey, disarmMods } from '$lib/stores';
 	let { oninject, onclose }: { oninject: (seq: string) => void; onclose?: () => void } = $props();
 
 	let inp: HTMLInputElement;
 	let prev = '';
 
 	onMount(() => inp.focus());
+
+	// Armed keybar modifiers apply to the next keystroke from here too —
+	// keybar-Ctrl + keyboard-c must send \x03. Only the first char takes
+	// the mod (one sticky = one keypress); then they disarm.
+	function injectMod(seq: string) {
+		const armed = get(kbdMods);
+		if (armed.ctrl || armed.alt || armed.shift) {
+			oninject(modKey(seq));
+			disarmMods();
+			return;
+		}
+		oninject(seq);
+	}
 
 	// Prefix-diff the field's value into keystrokes: deleted tail →
 	// backspaces, added tail → bytes. Middle edits/paste fall out of the
@@ -25,7 +40,16 @@
 		const back = '\x7f'.repeat(a.length - p);
 		const add = b.slice(p).join('');
 		if (back) oninject(back);
-		if (add) oninject(add);
+		if (add) {
+			const armed = get(kbdMods);
+			if (armed.ctrl || armed.alt || armed.shift) {
+				const [first, ...rest] = Array.from(add);
+				oninject(modKey(first) + rest.join(''));
+				disarmMods();
+			} else {
+				oninject(add);
+			}
+		}
 		prev = v;
 	}
 
@@ -37,7 +61,7 @@
 		const t = Date.now();
 		if (t - lastEnter < 80) return;
 		lastEnter = t;
-		oninject('\r');
+		injectMod('\r');
 		inp.value = '';
 		prev = '';
 	}
@@ -48,13 +72,13 @@
 			sendEnter();
 		} else if (e.key === 'Backspace' && inp.value === '') {
 			e.preventDefault();
-			oninject('\x7f'); // field is empty but the PTY line isn't
+			injectMod('\x7f'); // field is empty but the PTY line isn't
 		} else if (e.key === 'Tab') {
 			e.preventDefault();
-			oninject('\t');
+			injectMod('\t');
 		} else if (e.key === 'Escape') {
 			e.preventDefault();
-			oninject('\x1b');
+			injectMod('\x1b');
 		}
 	}
 

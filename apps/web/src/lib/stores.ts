@@ -82,6 +82,50 @@ export const drawerOpen = writable<boolean>(false);
 // the "active" touch mode. 'select' (text-select/copy) is the opt-in.
 export const touchMode = writable<'select' | 'mouse'>('mouse');
 
+// Sticky keybar modifiers, shared by KeyBar + InputLine: arm one, the
+// next keystroke from EITHER surface goes out modified, then disarms —
+// that's what makes keybar-Ctrl + keyboard-c produce \x03.
+export const kbdMods = writable({ ctrl: false, alt: false, shift: false });
+
+export function disarmMods() {
+	kbdMods.set({ ctrl: false, alt: false, shift: false });
+}
+
+const SHIFT_MAP: Record<string, string> = {
+	'1': '!', '2': '@', '3': '#', '4': '$', '5': '%',
+	'6': '^', '7': '&', '8': '*', '9': '(', '0': ')',
+	'-': '_', '=': '+', '[': '{', ']': '}', ';': ':',
+	"'": '"', '\\': '|', '`': '~', ',': '<', '.': '>', '/': '?'
+};
+
+const CTRL_MAP: Record<string, string> = {
+	'[': '\x1b', '\\': '\x1c', ']': '\x1d', '^': '\x1e',
+	_: '\x1f', '?': '\x7f', '@': '\x00'
+};
+
+// modKey encodes armed modifiers into real sequences: CSI-modified
+// arrows/function keys (\x1b[1;<mod>X), Shift+Tab → backtab, control
+// bytes for Ctrl+<char>, shifted chars, \x1b prefix for Alt.
+export function modKey(seq: string): string {
+	const m = get(kbdMods);
+	if (!m.ctrl && !m.alt && !m.shift) return seq;
+	const mod = 1 + (m.shift ? 1 : 0) + (m.alt ? 2 : 0) + (m.ctrl ? 4 : 0);
+	let mm: RegExpMatchArray | null;
+	if ((mm = seq.match(/^\x1b\[([ABCDHF])$/))) return `\x1b[1;${mod}${mm[1]}`;
+	if ((mm = seq.match(/^\x1b\[(\d+)~$/))) return `\x1b[${mm[1]};${mod}~`;
+	if (seq === '\t') return m.shift ? '\x1b[Z' : seq;
+	if (seq.length === 1) {
+		let c = seq;
+		if (m.shift) c = (c >= 'a' && c <= 'z') ? c.toUpperCase() : (SHIFT_MAP[c] ?? c);
+		if (m.ctrl) {
+			const lc = c.toLowerCase();
+			c = lc >= 'a' && lc <= 'z' ? String.fromCharCode(lc.charCodeAt(0) - 96) : (CTRL_MAP[c] ?? c);
+		}
+		return (m.alt ? '\x1b' : '') + c;
+	}
+	return m.alt ? '\x1b' + seq : seq;
+}
+
 let paneSeq = 0;
 export function newPane(sessionId: string) {
 	const p: Pane = { id: `p${++paneSeq}`, sessionId };
