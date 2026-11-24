@@ -132,14 +132,10 @@
 	}
 </script>
 
-<form
-	class:ghost
-	class="iline"
-	onsubmit={(e) => {
-		e.preventDefault();
-		sendEnter();
-	}}
->
+<!-- div, not form: an input inside <form> is an autofill candidate —
+     Chrome/Android then pins a password/payment/address row above the
+     keyboard. Enter is already covered by keydown + beforeinput. -->
+<div class:ghost class="iline">
 	{#if !focused && !hasText}
 		<!-- fake block cursor: a real caret needs focus, which mobile
 		     browsers won't grant without a gesture — this marks the
@@ -153,9 +149,15 @@
 		onkeydown={onKey}
 		onbeforeinput={onBeforeInput}
 		placeholder="type — sends to session"
+		name="tukbd"
+		type="text"
 		autocapitalize="off"
 		autocorrect="off"
 		autocomplete="off"
+		data-form-type="other"
+		data-lpignore="true"
+		data-1p-ignore="true"
+		data-bwignore
 		spellcheck="false"
 		enterkeyhint="send"
 		onfocus={() => (focused = true)}
@@ -170,10 +172,10 @@
 			onclick={onclose}>✕</button
 		>
 	{/if}
-</form>
+</div>
 
 <style>
-	form.iline {
+	.iline {
 		position: relative;
 		display: flex;
 		gap: 6px;
@@ -228,7 +230,7 @@
 	   armed) but the form costs zero screen space. height/opacity —
 	   not display/visibility — keep it focusable. Keystrokes already
 	   echo in the terminal, so nothing visible is lost. */
-	form.iline.ghost {
+	.iline.ghost {
 		position: absolute;
 		left: 0;
 		right: 0;
@@ -239,15 +241,15 @@
 		pointer-events: none;
 		z-index: -1;
 	}
-	form.iline.ghost .iin {
+	.iline.ghost .iin {
 		height: 1px;
 		opacity: 0;
 		padding: 0;
 		border: none;
 		caret-color: transparent;
 	}
-	form.iline.ghost .fakecaret,
-	form.iline.ghost .ix {
+	.iline.ghost .fakecaret,
+	.iline.ghost .ix {
 		display: none;
 	}
 </style>
