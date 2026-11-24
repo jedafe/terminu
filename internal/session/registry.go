@@ -39,7 +39,7 @@ type binding struct {
 func newRegistry(m *Manager) *registry {
 	return &registry{
 		m:        m,
-		adapters: []adapter.Adapter{adapter.Claude(), adapter.Codex(), adapter.Gemini(), adapter.Devin(), adapter.Aider()},
+		adapters: []adapter.Adapter{adapter.Claude(), adapter.Codex(), adapter.Gemini(), adapter.Opencode(), adapter.Devin(), adapter.Aider()},
 		bound:    map[string]*binding{},
 	}
 }

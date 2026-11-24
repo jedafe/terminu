@@ -93,6 +93,42 @@ func TestFixtureGeminiAllowExec(t *testing.T) {
 	}
 }
 
+func TestFixtureOpencodePermission(t *testing.T) {
+	s := replay(t, "fixtures/opencode/0.1/permission.cast")
+	m := Opencode().Detect(s, ctx())
+	if m == nil {
+		t.Fatal("no match")
+	}
+	if m.Kind != domain.WaitPermission || m.Confidence != domain.ConfidenceHigh {
+		t.Fatalf("match = %+v", m)
+	}
+	if len(m.Prompt.Options) != 3 {
+		t.Fatalf("options = %+v", m.Prompt.Options)
+	}
+	// Position-mapped injects (spec §7.5: arrows, not keys).
+	for i, o := range m.Prompt.Options {
+		if o.Inject.Kind != KeyArrowSelect || o.Inject.Arrows != i {
+			t.Fatalf("option %d inject = %+v", i, o.Inject)
+		}
+	}
+	// The modal sits mid-screen — outside DefaultScope(12)'s bottom
+	// band: this is what scan_scope: full buys.
+	if _, rows := s.Size(); m.Region.Y0 > rows-12 {
+		t.Fatalf("match should sit above the default bottom band: %+v", m.Region)
+	}
+}
+
+func TestFixtureOpencodeQuestion(t *testing.T) {
+	s := replay(t, "fixtures/opencode/0.1/question.cast")
+	m := Opencode().Detect(s, ctx())
+	if m == nil {
+		t.Fatal("no match")
+	}
+	if m.Kind != domain.WaitOption || len(m.Prompt.Options) != 3 {
+		t.Fatalf("match = %+v", m)
+	}
+}
+
 func TestFixtureDevinOptions(t *testing.T) {
 	s := replay(t, "fixtures/devin/1.0/options.cast")
 	m := Devin().Detect(s, ctx())
@@ -121,7 +157,7 @@ func TestFixtureDevinFreetext(t *testing.T) {
 // Negative fixtures: a busy screen must never fabricate buttons (§8.4 —
 // false-positive cost is wrong buttons into a live session).
 func TestCuratedNegatives(t *testing.T) {
-	for _, a := range []Adapter{Claude(), Codex(), Gemini(), Devin()} {
+	for _, a := range []Adapter{Claude(), Codex(), Gemini(), Opencode(), Devin()} {
 		s := replay(t, "fixtures/generic/g4/idle.cast") // log scroll + bare $
 		if m := a.Detect(s, ctx()); m != nil {
 			t.Errorf("%s matched a busy log screen: %+v", a.Pin().Tool, m)

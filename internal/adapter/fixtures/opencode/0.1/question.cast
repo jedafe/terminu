@@ -1,0 +1,7 @@
+{"version": 2, "width": 80, "height": 40, "timestamp": 1700000200, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "opencode 0.1.x\r\n"]
+[0.050, "o", "▌ Working on the task\r\n"]
+[0.200, "o", "\u001b[18;3HWhich migration strategy should I use?\r\n"]
+[0.210, "o", "  1. Sequential, one file per step\r\n"]
+[0.220, "o", "  2. Squash into a single migration\r\n"]
+[0.230, "o", "  3. Cancel and ask again later\r\n"]
