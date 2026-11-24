@@ -34,12 +34,13 @@
 		return seq;
 	}
 
-	// ⏎ sends ^J (\x0a) — the newline TUIs accept for multi-line input
-	// (devin/claude insert a line instead of submitting). Shell readline
-	// treats it as Enter too, so it's harmless there.
+	// ⏎ sends Alt+Enter (\x1b\r) — devin's documented multiline binding
+	// for terminals without kitty keyboard protocol (it shows an
+	// "Alt+Enter for multiline prompts" tip on non-kitty terminals;
+	// xterm.js is one). Shift+Enter's CSI-u only exists under kitty.
 	const keys: { label: string; seq: string; wide?: boolean }[] = [
 		{ label: 'Esc', seq: '\x1b' },
-		{ label: '⏎', seq: '\x0a' },
+		{ label: '⏎', seq: '\x1b\r' },
 		{ label: 'Tab', seq: '\t' },
 		{ label: '↑', seq: '\x1b[A' },
 		{ label: '↓', seq: '\x1b[B' },
