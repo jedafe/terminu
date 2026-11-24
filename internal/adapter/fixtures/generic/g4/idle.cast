@@ -1,0 +1,5 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1700000001, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "log line 1\r\nlog line 2\r\nlog line 3\r\nlog line 4\r\nlog line 5\r\nlog line 6\r\nlog line 7\r\nlog line 8\r\nlog line 9\r\nlog line 10\r\n"]
+[0.002, "o", "log line 11\r\nlog line 12\r\nlog line 13\r\nlog line 14\r\nlog line 15\r\nlog line 16\r\nlog line 17\r\nlog line 18\r\nlog line 19\r\nlog line 20\r\n"]
+[0.003, "o", "log line 21\r\nlog line 22\r\nlog line 23\r\n"]
+[0.004, "o", "$ "]
