@@ -5,7 +5,7 @@
 # Run as the deploy user (japa): NOPASSWD sudoers covers the restart.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEPLOY="$(dirname "$REPO")" # e.g. /home/japa/terminu
 BIN="$DEPLOY/bin/terminu-server"
 export PATH="$HOME/.bun/bin:$PATH" # bun lives user-local, not on PATH
