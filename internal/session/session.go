@@ -279,8 +279,10 @@ func (s *ptySession) dropLocked(c *Client) {
 
 // AttachClient registers c and snapshots under one critical section —
 // a frame can't fall between snapshot and subscription (dedup by seq is
-// the client's contract for boundary overlaps).
-func (s *ptySession) AttachClient(c *Client, lastSeq uint64) ([]chunk, uint64) {
+// the client's contract for boundary overlaps). overflowed reports that
+// the requested lastSeq fell outside the retained window and the reply
+// is a full snapshot, not a replay — the catalog's resync_overflow case.
+func (s *ptySession) AttachClient(c *Client, lastSeq uint64) ([]chunk, uint64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.rec.DetachedAt != nil {
@@ -291,13 +293,15 @@ func (s *ptySession) AttachClient(c *Client, lastSeq uint64) ([]chunk, uint64) {
 	s.conns[c] = struct{}{}
 	s.gt.Request() // a view opening is an authorized on-demand scan
 	if lastSeq == 0 {
-		return s.buf.snapshot()
+		chunks, next := s.buf.snapshot()
+		return chunks, next, false
 	}
 	chunks, next, ok := s.buf.replay(lastSeq)
 	if !ok {
-		return s.buf.snapshot()
+		chunks, next = s.buf.snapshot()
+		return chunks, next, true
 	}
-	return chunks, next
+	return chunks, next, false
 }
 
 // Detach removes a client — the PTY keeps running.

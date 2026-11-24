@@ -157,10 +157,14 @@ func (s *Server) wsSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Atomic snapshot+subscribe: last_seq beyond the retained window
-	// transparently falls back to a full snapshot (client dedups by seq).
+	// falls back to a full snapshot — the resync_overflow advisory tells
+	// the client it lost bytes, not just that its cursor was stale.
 	client := &session.Client{C: make(chan []byte, 256)}
-	chunks, next := sess.AttachClient(client, att.LastSeq)
+	chunks, next, overflowed := sess.AttachClient(client, att.LastSeq)
 	defer sess.Detach(client)
+	if overflowed {
+		_ = sendCtl(c, errMsg{Type: "error", Code: "resync_overflow", Message: "scrollback window exceeded — snapshot follows"})
+	}
 
 	// Catalog resync order: replayed data frames first, then hello with
 	// next_seq — the client's cursor is current before the ack arrives.

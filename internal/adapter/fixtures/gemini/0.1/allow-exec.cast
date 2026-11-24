@@ -1,0 +1,7 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1700000001, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "gemini-cli\r\n"]
+[0.050, "o", "╭──────────────────────────────────────────╮\r\n"]
+[0.060, "o", "│ Allow execution of: 'ls -la'?            │\r\n"]
+[0.070, "o", "│                                          │\r\n"]
+[0.080, "o", "│ 1. Yes, allow once                       │\r\n│ 2. Yes, allow always                     │\r\n│ 3. No                                    │\r\n"]
+[0.090, "o", "╰──────────────────────────────────────────╯\r\n"]

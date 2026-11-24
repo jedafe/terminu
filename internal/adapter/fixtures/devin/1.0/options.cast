@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1700000001, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "devin CLI — select organization\r\n"]
+[0.100, "o", "1) acme-corp\r\n2) dev-team\r\n3) personal\r\n"]

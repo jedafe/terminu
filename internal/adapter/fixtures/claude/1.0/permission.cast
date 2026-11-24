@@ -1,0 +1,5 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1700000001, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "claude code v1.x\r\n"]
+[0.050, "o", "Editing main.go...\r\n\r\n"]
+[0.100, "o", "Do you want to proceed?\r\n"]
+[0.110, "o", "  1. Yes\r\n  2. Yes, and don't ask again for git status\r\n  3. No\r\n"]

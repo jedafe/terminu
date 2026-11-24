@@ -1,0 +1,5 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1700000001, "env": {"TERM": "xterm-256color"}}
+[0.001, "o", "codex-cli 0.40.x\r\n"]
+[0.050, "o", "codex wants to run: git commit -m \"wip\"\r\n"]
+[0.100, "o", "\r\n"]
+[0.110, "o", "› Yes, proceed (y)\r\n  Yes, and don't ask again for this command (a)\r\n  No (n)\r\n"]
