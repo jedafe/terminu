@@ -56,6 +56,9 @@
 	}
 
 	onMount(() => {
+		// verbatim → Android TYPE_TEXT_FLAG_NO_SUGGESTIONS (kills the
+		// suggestion strip); valid per spec but not in TS's DOM lib yet.
+		inp.setAttribute('inputmode', 'verbatim');
 		if (armed) inp.focus();
 		// Mobile browsers refuse programmatic focus without a gesture —
 		// retry on real pointer contact so the first touch lands the
@@ -167,7 +170,7 @@
 		onbeforeinput={onBeforeInput}
 		placeholder="type — sends to session"
 		name="tukbd"
-		type="text"
+		type="search"
 		autocapitalize="off"
 		autocorrect="off"
 		autocomplete="off"
