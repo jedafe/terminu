@@ -10,8 +10,14 @@
 	let {
 		oninject,
 		onclose,
-		ghost = false
-	}: { oninject: (seq: string) => void; onclose?: () => void; ghost?: boolean } = $props();
+		ghost = false,
+		armed = true
+	}: {
+		oninject: (seq: string) => void;
+		onclose?: () => void;
+		ghost?: boolean;
+		armed?: boolean;
+	} = $props();
 
 	let inp: HTMLInputElement;
 	let prev = '';
@@ -26,9 +32,16 @@
 	// to another field (search box, prompt reply) or the session drawer.
 	// xterm's own helper textarea does NOT count — its focus is the
 	// unreliable path this component exists to replace.
+	export function focus() {
+		inp?.focus();
+	}
+	export function blur() {
+		inp?.blur();
+	}
+
 	function onBlur() {
 		focused = false;
-		if (!coarse()) return;
+		if (!coarse() || !armed) return;
 		const el = document.activeElement as HTMLElement | null;
 		if (el && el !== document.body) {
 			if (el.closest('.drawer')) return;
@@ -43,16 +56,20 @@
 	}
 
 	onMount(() => {
-		inp.focus();
+		if (armed) inp.focus();
 		// Mobile browsers refuse programmatic focus without a gesture —
 		// retry on real pointer contact so the first touch lands the
 		// caret (and raises the keyboard) instead of needing a second tap.
-		const arm = () => {
+		const armFn = () => {
+			if (!armed) {
+				window.removeEventListener('pointerdown', armFn);
+				return;
+			}
 			inp.focus();
-			if (document.activeElement === inp) window.removeEventListener('pointerdown', arm);
+			if (document.activeElement === inp) window.removeEventListener('pointerdown', armFn);
 		};
-		window.addEventListener('pointerdown', arm);
-		return () => window.removeEventListener('pointerdown', arm);
+		window.addEventListener('pointerdown', armFn);
+		return () => window.removeEventListener('pointerdown', armFn);
 	});
 
 	// Armed keybar modifiers apply to the next keystroke from here too —

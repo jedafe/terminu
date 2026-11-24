@@ -35,9 +35,10 @@
 	const coarsePtr = () =>
 		typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 	let kbdOpen = $state(coarsePtr());
-	// On touch the bar stays ghosted (armed but invisible) until ⌨
-	// reveals it — the input keeps focus either way.
-	let barVisible = $state(false);
+	// On touch the field is always ghosted — never rendered — and ⌨
+	// toggles whether it holds focus (keyboard up/down). Green = armed.
+	let kbdArmed = $state(true);
+	let iline: InputLine | undefined = $state();
 	// The shell tracks the *visual* viewport, not 100dvh: on mobile the
 	// keyboard shrinks the visual viewport without always resizing the
 	// layout one (iOS), and without this the keybar sits under the
@@ -430,16 +431,26 @@
 
 	{#if kbdOpen}
 		<InputLine
+			bind:this={iline}
 			oninject={injectRaw}
-			ghost={coarsePtr() && !barVisible}
-			onclose={() => (coarsePtr() ? (barVisible = false) : (kbdOpen = false))}
+			ghost={coarsePtr()}
+			armed={!coarsePtr() || kbdArmed}
+			onclose={() => (kbdOpen = false)}
 		/>
 	{/if}
 	<KeyBar
 		oninject={inject}
 		onpaste={paste}
-		ontogglekbd={() => (coarsePtr() ? (barVisible = !barVisible) : (kbdOpen = !kbdOpen))}
-		kbdOn={coarsePtr() ? barVisible : kbdOpen}
+		ontogglekbd={() => {
+			if (coarsePtr()) {
+				kbdArmed = !kbdArmed;
+				if (kbdArmed) iline?.focus();
+				else iline?.blur();
+			} else {
+				kbdOpen = !kbdOpen;
+			}
+		}}
+		kbdOn={coarsePtr() ? kbdArmed : kbdOpen}
 	/>
 </div>
 
