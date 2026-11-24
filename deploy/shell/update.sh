@@ -7,14 +7,16 @@ set -euo pipefail
 
 # Bash reads scripts incrementally — if `git pull` replaces this file
 # mid-run the remaining bytes get misread. Run a private copy instead;
-# REPO is resolved before the exec since the copy lives in /tmp.
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# REPO is resolved in the outer script and passed through the env, since
+# the copy's own path sits in /tmp and can't resolve the repo.
 if [[ "${_UPDATE_SH_COPY:-}" != 1 ]]; then
+	REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 	_copy="$(mktemp /tmp/terminu-update.XXXXXX.sh)"
 	cp "${BASH_SOURCE[0]}" "$_copy"
 	export REPO
 	_UPDATE_SH_COPY=1 exec bash "$_copy" "$@"
 fi
+: "${REPO:?internal error — REPO unset}"
 DEPLOY="$(dirname "$REPO")" # e.g. /home/japa/terminu
 BIN="$DEPLOY/bin/terminu-server"
 export PATH="$HOME/.bun/bin:$PATH" # bun lives user-local, not on PATH
