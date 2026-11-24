@@ -52,6 +52,7 @@
 	const PTR_TRIP = 64;
 	const PTR_MAX = 96;
 	let pullStart = -1;
+	let pullX = -1;
 	let pull = $state(0);
 	let ptrBusy = $state(false);
 	let shellEl: HTMLDivElement;
@@ -59,16 +60,21 @@
 	function ptrDown(e: PointerEvent) {
 		if (e.pointerType !== 'touch' || ptrBusy) return;
 		const t = e.target as Element;
-		if (t.closest('.pterm')) return;
-		const sc = t.closest('.drawer');
-		if (sc && sc.scrollTop > 0) return; // mid-list drag scrolls
+		// Pull zone is the top bar only — everywhere else scrolls,
+		// drags, or drives keys of its own. The terminal has its own
+		// pull at scroll-top.
+		if (!t.closest('.topbar')) return;
 		pullStart = e.clientY;
+		pullX = e.clientX;
 	}
 	function ptrMove(e: PointerEvent) {
 		if (pullStart < 0) return;
 		const dy = e.clientY - pullStart;
-		if (dy < -6) {
-			pullStart = -1; // reversed — hand the gesture back to scrolling
+		const dx = Math.abs(e.clientX - pullX);
+		// horizontal-dominant or reversed → hand the gesture back to
+		// the pane scroller / normal behavior
+		if ((dx > 12 && dx > Math.abs(dy)) || dy < -6) {
+			pullStart = -1;
 			pull = 0;
 			return;
 		}

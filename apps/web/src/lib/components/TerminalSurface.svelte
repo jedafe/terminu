@@ -207,6 +207,7 @@
 	// already sits at the oldest scrollback line AND no TUI holds the
 	// mouse — otherwise the drag keeps its normal job (scroll/TUI wheel).
 	let pullStart = -1;
+	let pullX = -1;
 	function armPull(e: PointerEvent) {
 		pullStart = -1;
 		if (!onpull && !onpullrelease) return;
@@ -214,6 +215,7 @@
 		if ((term?.modes?.mouseTrackingMode ?? 'none') !== 'none') return;
 		if (term.buffer.active.viewportY !== 0) return;
 		pullStart = e.clientY;
+		pullX = e.clientX;
 	}
 
 	function armTouchLayer() {
@@ -237,7 +239,9 @@
 			if (lpPt && Math.hypot(e.clientX - lpPt.x, e.clientY - lpPt.y) > LP_MOVE) cancelLp();
 			if (pullStart >= 0) {
 				const dy = e.clientY - pullStart;
-				if (dy < -6) pullStart = -1; // reversed → normal gesture
+				const dx = Math.abs(e.clientX - pullX);
+				// reversed or horizontal-dominant → select/scroll gesture
+				if (dy < -6 || (dx > 12 && dx > Math.abs(dy))) pullStart = -1;
 				else onpull?.(dy > 0 ? dy : 0);
 			}
 		});
