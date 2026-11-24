@@ -58,6 +58,8 @@ export interface Session {
 	created_at: string;
 	detached_at?: string;
 	ended_at?: string;
+	// overlay flag — live session unattended past the reconnect window
+	detached?: boolean;
 }
 
 export interface SpawnRequest {

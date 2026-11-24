@@ -82,7 +82,7 @@
 	}
 	.iin {
 		flex: 1;
-		height: 42px;
+		height: 44px;
 		border: 1px solid #2b3b55;
 		border-radius: 9px;
 		background: #11161f;
@@ -95,8 +95,8 @@
 		border-color: #4cc9f0;
 	}
 	.ix {
-		min-width: 42px;
-		height: 42px;
+		min-width: 44px;
+		height: 44px;
 		border: 1px solid #22304a;
 		border-radius: 9px;
 		background: #141b26;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, ApiError } from '$lib/api';
 	import { me } from '$lib/stores';
 
 	let username = $state('');
@@ -14,8 +14,13 @@
 		try {
 			await api.login(username, password);
 			me.set(await api.me());
-		} catch {
-			err = 'invalid credentials';
+		} catch (e) {
+			err =
+				e instanceof ApiError && e.code === 'rate_limited'
+					? 'too many attempts — try again shortly'
+					: e instanceof ApiError && e.code !== 'unauthorized'
+						? e.message
+						: 'invalid credentials';
 		} finally {
 			busy = false;
 		}

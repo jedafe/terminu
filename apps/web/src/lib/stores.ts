@@ -20,11 +20,13 @@ export const agentStates = writable<Record<string, AgentInfo>>({});
 
 // §05 ordering: waiting-for-input (high conf, then oldest wait), then
 // working-ish, then done/error recent — mirrors the server's Agents().
+// Low-confidence waits demote out of the top rank ("may be waiting"
+// never needs-you — AGENTS.md).
 export const orderedSessions = derived([sessions, agentStates], ([$s, $a]) => {
 	const conf = (c?: string) => (c === 'high' ? 0 : c === 'medium' ? 1 : 2);
 	const rank = (s: Session) => {
 		const st = $a[s.id]?.state ?? s.state;
-		if (st === 'waiting-for-input') return 0;
+		if (st === 'waiting-for-input' && $a[s.id]?.confidence !== 'low') return 0;
 		if (st === 'done' || st === 'error' || st === 'ended') return 2;
 		return 1;
 	};
@@ -125,7 +127,8 @@ let eventsWired = false;
 export function wireEvents() {
 	if (eventsWired) return;
 	eventsWired = true;
-	subscribeEvents((e) => {
+	subscribeEvents(
+		(e) => {
 		if (e.type === 'agent.state' && e.session_id) {
 			const ev = e as {
 				session_id: string;
@@ -163,5 +166,12 @@ export function wireEvents() {
 			});
 			void refreshAgents().catch(() => {});
 		});
-	});
+	},
+		// The socket has no replay channel — a drop silently misses
+		// transitions, so every (re)open is a full catch-up point.
+		() => {
+			void refreshSessions().catch(() => {});
+			void refreshAgents().catch(() => {});
+		}
+	);
 }

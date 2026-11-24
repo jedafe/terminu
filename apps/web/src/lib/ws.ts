@@ -149,8 +149,13 @@ export class SessionClient {
 	}
 }
 
-// Events socket — session lifecycle broadcast.
-export function subscribeEvents(onEvent: (e: { type: string; session_id?: string }) => void) {
+// Events socket — session lifecycle broadcast. onOpen fires on every
+// (re)open: the socket has no replay channel, so subscribers must
+// refetch to catch up on transitions missed while disconnected.
+export function subscribeEvents(
+	onEvent: (e: { type: string; session_id?: string }) => void,
+	onOpen?: () => void
+) {
 	const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 	let ws: WebSocket | null = null;
 	let closed = false;
@@ -165,7 +170,10 @@ export function subscribeEvents(onEvent: (e: { type: string; session_id?: string
 				/* bad frame */
 			}
 		};
-		ws.onopen = () => (tries = 0);
+		ws.onopen = () => {
+			tries = 0;
+			onOpen?.();
+		};
 		ws.onclose = () => setTimeout(open, BACKOFF[Math.min(tries++, BACKOFF.length - 1)]);
 	};
 	open();

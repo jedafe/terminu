@@ -51,8 +51,11 @@
 	function isFinished(s: Session) {
 		return !isLive(s);
 	}
+	// §05: a low-confidence wait ("may be waiting") is never promoted to
+	// the needs-you rank — AGENTS.md: unknown shows the hint only.
 	function needsYouId(id: string) {
-		return $agentStates[id]?.state === 'waiting-for-input';
+		const a = $agentStates[id];
+		return a?.state === 'waiting-for-input' && a.confidence !== 'low';
 	}
 	function needsYou(s: Session) {
 		return needsYouId(s.id);
@@ -78,6 +81,11 @@
 			return s.state + (ago ? ` ${ago}` : '');
 		}
 		return a?.process ?? s.state;
+	}
+	// The detached overlay flag: a live session nobody has watched for
+	// longer than TU_RECONNECT_WINDOW_S.
+	function detachedOf(s: Session) {
+		return s.detached && isLive(s);
 	}
 	function toolBadge(s: Session) {
 		return $agentStates[s.id]?.tool ?? '';
@@ -312,7 +320,9 @@
 				<span class="sname">{label(s)}</span>
 				{#if toolBadge(s)}<span class="badge">{toolBadge(s)}</span>{/if}
 			</span>
-			<span class="ssub" class:needs={needsYou(s)}>{subLabel(s)}</span>
+			<span class="ssub" class:needs={needsYou(s)}>
+				{subLabel(s)}{#if detachedOf(s)}<span class="det"> · unattended</span>{/if}
+			</span>
 		</span>
 		{#if isLive(s)}
 			<button class="sact end" title="terminate session — keeps the log row" onclick={(e) => endOrDelete(s.id, e)}>end</button>
@@ -342,7 +352,7 @@
 	}
 	.tb {
 		min-width: 44px;
-		height: 38px;
+		height: 44px;
 		border: 1px solid #22304a;
 		border-radius: 9px;
 		background: #141b26;
@@ -363,7 +373,7 @@
 		display: none;
 	}
 	.pane-tab {
-		height: 38px;
+		height: 44px;
 		display: flex;
 		align-items: center;
 		border: 1px solid #22304a;
@@ -386,8 +396,10 @@
 		background: transparent;
 		color: #4a5568;
 		font-size: 11px;
-		padding: 6px 7px;
+		padding: 0 12px;
 		margin-left: 4px;
+		align-self: stretch;
+		min-width: 40px;
 	}
 	.tabx:active {
 		color: #ff8080;
@@ -483,6 +495,9 @@
 	.ssub.needs {
 		color: #f0b429;
 	}
+	.det {
+		color: #7a5aa0;
+	}
 	.ghead {
 		display: flex;
 		justify-content: space-between;
@@ -498,14 +513,15 @@
 		color: #8a4a5a;
 		font: 10px ui-monospace, monospace;
 		letter-spacing: 0.12em;
-		padding: 4px 8px;
+		padding: 12px 10px;
+		min-height: 44px;
 	}
 	.clearall:active {
 		color: #ff8080;
 	}
 	.sact {
 		min-width: 44px;
-		height: 34px;
+		height: 44px;
 		border: 1px solid #22304a;
 		border-radius: 8px;
 		background: #141b26;
@@ -591,7 +607,7 @@
 		background: transparent;
 		color: #5a3540;
 		font-size: 12px;
-		padding: 4px 8px;
+		padding: 12px 14px;
 	}
 	.pterm {
 		flex: 1;

@@ -2,9 +2,11 @@
      one per pane; touch layer resolves TUI-mouse vs browser-selection. -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { get } from 'svelte/store';
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import { SearchAddon } from '@xterm/addon-search';
+	import { Unicode11Addon } from '@xterm/addon-unicode11';
 	import { SessionClient, keystrokeToBytes, type PromptFrame } from '$lib/ws';
 	import { touchMode } from '$lib/stores';
 	import '@xterm/xterm/css/xterm.css';
@@ -42,6 +44,8 @@
 		search = new SearchAddon();
 		term.loadAddon(fit);
 		term.loadAddon(search);
+		term.loadAddon(new Unicode11Addon());
+		term.unicode.activeVersion = '11';
 		term.open(el);
 
 		// WebGL renderer — graceful fallback to canvas.
@@ -102,15 +106,125 @@
 		});
 		client.connect();
 
+		armTouchLayer();
+
 		const ro = new ResizeObserver(() => sendResize());
 		ro.observe(el);
 		return () => ro.disconnect();
 	});
 
 	onDestroy(() => {
+		cancelLp();
 		client?.detach();
 		term?.dispose();
 	});
+
+	// --- touch layer (§02/§11): the pointer contract on mobile ---
+	// mouse mode: xterm's native path — taps report to the TUI when it
+	//   holds the mouse; long-press or contextmenu re-dispatches a
+	//   right-button tap so the TUI sees a real right click.
+	// select mode: primary mousedown is re-dispatched shift-modified —
+	//   xterm then takes its built-in forced-selection path (the desktop
+	//   Shift+drag escape) even while a TUI owns the mouse. On touch,
+	//   long-press copies the tapped row — canvas/WebGL have no DOM text
+	//   for the browser's own selection.
+	const LP_MS = 450;
+	const LP_MOVE = 12;
+	let lpTimer: ReturnType<typeof setTimeout> | undefined;
+	let lpPt: { x: number; y: number } | null = null;
+	let lastRightClick = 0;
+
+	function cancelLp() {
+		if (lpTimer) clearTimeout(lpTimer);
+		lpTimer = undefined;
+		lpPt = null;
+	}
+
+	function rightClickAt(x: number, y: number) {
+		const t = (document.elementFromPoint(x, y) ?? el) as Element;
+		for (const type of ['mousedown', 'mouseup']) {
+			const ev = new MouseEvent(type, {
+				bubbles: true,
+				cancelable: true,
+				button: 2,
+				clientX: x,
+				clientY: y
+			});
+			(ev as unknown as { __tsynth: boolean }).__tsynth = true;
+			t.dispatchEvent(ev);
+		}
+		lastRightClick = Date.now();
+	}
+
+	// Map a viewport Y to a buffer row for select-mode line grabs.
+	function rowAt(y: number) {
+		const scr = el.querySelector('.xterm-screen') ?? el;
+		const r = scr.getBoundingClientRect();
+		const cell = r.height / Math.max(1, term.rows);
+		const rel = Math.min(term.rows - 1, Math.max(0, Math.floor((y - r.top) / cell)));
+		return rel + term.buffer.active.viewportY;
+	}
+
+	function lpFire() {
+		const p = lpPt;
+		cancelLp();
+		if (!p) return;
+		if (get(touchMode) === 'mouse') {
+			rightClickAt(p.x, p.y);
+			return;
+		}
+		const row = rowAt(p.y);
+		term.selectLines(row, row);
+		const text = term.getSelection();
+		if (text) {
+			void navigator.clipboard?.writeText(text);
+			toast('line copied');
+		}
+	}
+
+	function armTouchLayer() {
+		el.addEventListener('pointerdown', (e) => {
+			if (e.pointerType !== 'touch') return;
+			lpPt = { x: e.clientX, y: e.clientY };
+			lpTimer = setTimeout(lpFire, LP_MS);
+		});
+		el.addEventListener('pointermove', (e) => {
+			if (lpPt && Math.hypot(e.clientX - lpPt.x, e.clientY - lpPt.y) > LP_MOVE) cancelLp();
+		});
+		el.addEventListener('pointerup', cancelLp);
+		el.addEventListener('pointercancel', cancelLp);
+
+		el.addEventListener('contextmenu', (e) => {
+			e.preventDefault();
+			// Android fires contextmenu for the same long-press lpFire already
+			// handled — the window dedupes; desktop right-clicks pass through.
+			if (get(touchMode) === 'mouse' && Date.now() - lastRightClick > 600) {
+				rightClickAt(e.clientX, e.clientY);
+			}
+		});
+
+		// Capture beats xterm's own bubble listener: the real press never
+		// reaches it, the shift-marked copy does → forced selection.
+		el.addEventListener(
+			'mousedown',
+			(e) => {
+				if (get(touchMode) !== 'select' || e.button !== 0) return;
+				if ((e as unknown as { __tsynth?: boolean }).__tsynth) return;
+				e.stopPropagation();
+				const ev = new MouseEvent('mousedown', {
+					bubbles: true,
+					cancelable: true,
+					shiftKey: true,
+					button: 0,
+					clientX: e.clientX,
+					clientY: e.clientY
+				});
+				(ev as unknown as { __tsynth: boolean }).__tsynth = true;
+				(e.target as Element).dispatchEvent(ev);
+			},
+			true
+		);
+	}
 
 	function sendResize() {
 		try {
@@ -315,7 +429,9 @@
 		background: none;
 		color: #7a8aa0;
 		font-size: 14px;
-		padding: 4px;
+		min-width: 44px;
+		min-height: 44px;
+		margin: -8px -4px;
 	}
 	.prow {
 		display: flex;
@@ -323,7 +439,7 @@
 		flex-wrap: wrap;
 	}
 	.popt {
-		min-height: 40px;
+		min-height: 44px;
 		padding: 0 16px;
 		border: 1px solid #33415c;
 		border-radius: 8px;
@@ -344,7 +460,7 @@
 	}
 	.pfree input {
 		flex: 1;
-		height: 40px;
+		height: 44px;
 		border: 1px solid #33415c;
 		border-radius: 8px;
 		background: #0d1420;
@@ -353,7 +469,7 @@
 		font: 14px ui-monospace, monospace;
 	}
 	.pfree button {
-		height: 40px;
+		height: 44px;
 		padding: 0 14px;
 		border: 1px solid #33415c;
 		border-radius: 8px;
@@ -383,8 +499,8 @@
 		align-items: center;
 	}
 	.tool {
-		min-width: 36px;
-		min-height: 36px;
+		min-width: 44px;
+		min-height: 44px;
 		border: 0;
 		border-radius: 8px;
 		background: rgba(28, 36, 48, 0.75);
@@ -395,7 +511,7 @@
 		background: #33415c;
 	}
 	.searchbox {
-		height: 36px;
+		height: 44px;
 		width: 44vw;
 		max-width: 220px;
 		border: 1px solid #33415c;
