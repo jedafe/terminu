@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 
@@ -38,7 +39,7 @@ func ReplayCast(path string, s *screen.Screen) error {
 }
 
 // ReplayCastReader is ReplayCast over any reader.
-func ReplayCastReader(r *os.File, s *screen.Screen) error {
+func ReplayCastReader(r io.Reader, s *screen.Screen) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	first := true

@@ -25,31 +25,60 @@
 
 	let surfaces: Record<string, TerminalSurface | undefined> = {};
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+	let now = Date.now();
 
-	onMount(async () => {
-		await refreshSessions();
-		await refreshAgents();
-		await restoreWorkspace();
-		wireEvents();
-		if ($panes.length === 0) {
-			const live = $sessions.find((s) => isLive(s));
-			if (live) newPane(live.id);
-			else await spawn();
-		}
+	onMount(() => {
+		const tick = setInterval(() => (now = Date.now()), 15000);
+		void (async () => {
+			await refreshSessions();
+			await refreshAgents();
+			await restoreWorkspace();
+			wireEvents();
+			if ($panes.length === 0) {
+				const live = $sessions.find((s) => isLive(s));
+				if (live) newPane(live.id);
+				else await spawn();
+			}
+		})();
+		return () => clearInterval(tick);
 	});
 
 	function isLive(s: Session) {
 		return ['starting', 'working', 'waiting-for-input', 'undetectable', 'detached'].includes(s.state);
 	}
-
-	// §05: detection state overrides the DB state for display — waiting
-	// rows surface "needs you".
-	function needsYou(s: Session) {
-		return $agentStates[s.id]?.state === 'waiting-for-input';
+	function isFinished(s: Session) {
+		return !isLive(s);
 	}
-	function stateLabel(s: Session) {
-		const st = $agentStates[s.id]?.state ?? s.state;
-		return st === 'waiting-for-input' ? 'needs you' : st;
+	function needsYouId(id: string) {
+		return $agentStates[id]?.state === 'waiting-for-input';
+	}
+	function needsYou(s: Session) {
+		return needsYouId(s.id);
+	}
+
+	function fmtAgo(iso?: string) {
+		if (!iso) return '';
+		const sec = Math.max(0, (now - Date.parse(iso)) / 1000);
+		if (sec < 10) return 'now';
+		if (sec < 60) return `${Math.floor(sec)}s`;
+		if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+		if (sec < 86400) return `${Math.floor(sec / 3600)}h`;
+		return `${Math.floor(sec / 86400)}d`;
+	}
+
+	// §05 row subline: waiting → how long it's been waiting; finished →
+	// terminal state + when it ended; live → foreground process/state.
+	function subLabel(s: Session) {
+		const a = $agentStates[s.id];
+		if (needsYou(s)) return `waiting ${fmtAgo(a?.since)}`;
+		if (isFinished(s)) {
+			const ago = fmtAgo(s.ended_at);
+			return s.state + (ago ? ` ${ago}` : '');
+		}
+		return a?.process ?? s.state;
+	}
+	function toolBadge(s: Session) {
+		return $agentStates[s.id]?.tool ?? '';
 	}
 
 	function scheduleSave() {
@@ -75,11 +104,26 @@
 		scheduleSave();
 	}
 
-	async function killSession(id: string, e: Event) {
+	// DELETE /{id}: live session → terminate (lands in finished, log kept);
+	// finished session → hard-delete the log row. Server picks the branch.
+	async function endOrDelete(id: string, e: Event) {
 		e.stopPropagation();
 		await api.kill(id);
 		for (const p of $panes.filter((p) => p.sessionId === id)) closePane(p.id);
 		await refreshSessions();
+		await refreshAgents().catch(() => {});
+	}
+
+	// DELETE /api/sessions — clear all finished rows + their logs at once.
+	async function clearFinished(e: Event) {
+		e.stopPropagation();
+		const res = await api.clearFinished();
+		if (res.cleared > 0) {
+			const gone = new Set($orderedSessions.filter(isFinished).map((s) => s.id));
+			for (const p of $panes.filter((p) => gone.has(p.sessionId))) closePane(p.id);
+		}
+		await refreshSessions();
+		await refreshAgents().catch(() => {});
 	}
 
 	function inject(seq: string) {
@@ -125,6 +169,7 @@
 						scheduleSave();
 					}}
 				>
+					{#if needsYouId(p.sessionId)}<span class="tabdot needs"></span>{/if}
 					{label(sessionOf(p.sessionId))}
 				</button>
 			{/each}
@@ -140,21 +185,41 @@
 		</button>
 	</header>
 
-	<!-- session drawer -->
+	<!-- session drawer: grouped needs-you / running / finished -->
 	{#if $drawerOpen}
+		{@const needs = $orderedSessions.filter(needsYou)}
+		{@const running = $orderedSessions.filter((s) => isLive(s) && !needsYou(s))}
+		{@const finished = $orderedSessions.filter(isFinished)}
 		<div class="drawer">
 			<div class="dhead">
 				<span>sessions</span>
 				<button class="tb" onclick={spawn}>+ new</button>
 			</div>
-			{#each $orderedSessions as s (s.id)}
-				<div class="srow" class:needs={needsYou(s)} role="button" tabindex="0" onclick={() => openSession(s)} onkeydown={() => openSession(s)}>
-					<span class="dot" class:live={isLive(s)} class:dead={!isLive(s)} class:needs={needsYou(s)}></span>
-					<span class="sname">{label(s)}</span>
-					<span class="smeta" class:needs={needsYou(s)}>{stateLabel(s)}</span>
-					<button class="skill" onclick={(e) => killSession(s.id, e)}>✕</button>
+
+			{#if needs.length > 0}
+				<div class="ghead">needs you</div>
+				{#each needs as s (s.id)}
+					{@render srow(s)}
+				{/each}
+			{/if}
+
+			{#if running.length > 0}
+				<div class="ghead">running</div>
+				{#each running as s (s.id)}
+					{@render srow(s)}
+				{/each}
+			{/if}
+
+			{#if finished.length > 0}
+				<div class="ghead">
+					<span>finished</span>
+					<button class="clearall" onclick={clearFinished}>clear all</button>
 				</div>
-			{/each}
+				{#each finished as s (s.id)}
+					{@render srow(s)}
+				{/each}
+			{/if}
+
 			{#if $sessions.length === 0}
 				<div class="empty">no sessions — tap + new</div>
 			{/if}
@@ -195,6 +260,33 @@
 
 	<KeyBar oninject={inject} onpaste={paste} />
 </div>
+
+<!-- one session row — dot, name + tool badge, state/wait subline, and the
+     lifecycle action (live → end, finished → del). -->
+{#snippet srow(s: Session)}
+	<div
+		class="srow"
+		class:needs={needsYou(s)}
+		role="button"
+		tabindex="0"
+		onclick={() => openSession(s)}
+		onkeydown={() => openSession(s)}
+	>
+		<span class="dot" class:live={isLive(s)} class:dead={isFinished(s)} class:needs={needsYou(s)}></span>
+		<span class="smain">
+			<span class="stop">
+				<span class="sname">{label(s)}</span>
+				{#if toolBadge(s)}<span class="badge">{toolBadge(s)}</span>{/if}
+			</span>
+			<span class="ssub" class:needs={needsYou(s)}>{subLabel(s)}</span>
+		</span>
+		{#if isLive(s)}
+			<button class="sact end" title="terminate session" onclick={(e) => endOrDelete(s.id, e)}>end</button>
+		{:else}
+			<button class="sact del" title="delete session log" onclick={(e) => endOrDelete(s.id, e)}>del</button>
+		{/if}
+	</div>
+{/snippet}
 
 <style>
 	.shell {
@@ -306,33 +398,95 @@
 	.srow.needs {
 		background: #1a160c;
 	}
-	.smeta.needs {
-		color: #f0b429;
+	.smain {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.stop {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
 	}
 	.sname {
-		flex: 1;
 		font: 14px ui-monospace, monospace;
 		color: #e6e6e6;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.smeta {
+	.badge {
+		flex-shrink: 0;
+		font: 10px ui-monospace, monospace;
+		color: #4cc9f0;
+		border: 1px solid #1d3550;
+		border-radius: 5px;
+		padding: 1px 6px;
+		background: #0e1a26;
+	}
+	.ssub {
 		font: 11px ui-monospace, monospace;
 		color: #4a5568;
 	}
-	.skill {
-		min-width: 36px;
-		height: 36px;
-		border: 0;
-		border-radius: 8px;
-		background: transparent;
-		color: #5a3540;
-		font-size: 14px;
+	.ssub.needs {
+		color: #f0b429;
 	}
-	.skill:active {
+	.ghead {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 14px 4px;
+		color: #3d4d68;
+		font: 10px ui-monospace, monospace;
+		letter-spacing: 0.18em;
+	}
+	.clearall {
+		border: 0;
+		background: transparent;
+		color: #8a4a5a;
+		font: 10px ui-monospace, monospace;
+		letter-spacing: 0.12em;
+		padding: 4px 8px;
+	}
+	.clearall:active {
+		color: #ff8080;
+	}
+	.sact {
+		min-width: 44px;
+		height: 34px;
+		border: 1px solid #22304a;
+		border-radius: 8px;
+		background: #141b26;
+		font: 11px ui-monospace, monospace;
+		flex-shrink: 0;
+	}
+	.sact.end {
+		color: #d0a24a;
+	}
+	.sact.end:active {
+		background: #2a2410;
+	}
+	.sact.del {
+		color: #8a4a5a;
+	}
+	.sact.del:active {
 		background: #3a1f1f;
 		color: #ff8080;
+	}
+	.tabdot {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		margin-right: 6px;
+		vertical-align: 1px;
+	}
+	.tabdot.needs {
+		background: #f0b429;
+		box-shadow: 0 0 5px #f0b42980;
 	}
 	.empty,
 	.empty-main {

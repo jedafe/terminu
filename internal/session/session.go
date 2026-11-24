@@ -43,8 +43,10 @@ type ptySession struct {
 	exit  chan int
 	once  sync.Once
 	mgr   *Manager
-	scr   *screen.Screen // §06 headless model — fed in readLoop
-	gt    *gate.Gate     // trigger gate — emits scan events on s.done
+
+	killed bool           // deliberate terminate → onExit lands `ended`, not `error`
+	scr    *screen.Screen // §06 headless model — fed in readLoop
+	gt     *gate.Gate     // trigger gate — emits scan events on s.done
 
 	stateUp chan StateUpdate // detection transitions → session-WS frames
 }

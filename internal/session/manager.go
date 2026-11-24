@@ -39,6 +39,7 @@ type Manager struct {
 
 var ErrNotFound = errors.New("session not found")
 var ErrLimit = errors.New("session limit reached")
+var ErrStillLive = errors.New("session still live — terminate before delete")
 
 func NewManager(cfg *config.Config, q *gen.Queries, bus *EventBus) *Manager {
 	m := &Manager{cfg: cfg, q: q, live: map[string]*ptySession{}, events: bus}
@@ -166,15 +167,57 @@ func (m *Manager) Rename(ctx context.Context, id, name string) error {
 	return nil
 }
 
-// Kill terminates the process (broker action, audited by caller).
+// Kill terminates the process. The row stays — onExit marks it `ended`
+// so its session_state_log history survives (broker action, audited by
+// caller; DELETE on a live session lands here).
 func (m *Manager) Kill(ctx context.Context, id string) error {
 	m.mu.Lock()
 	s, ok := m.live[id]
 	m.mu.Unlock()
-	if ok {
-		_ = s.cmd.Process.Kill()
+	if !ok {
+		return nil
+	}
+	s.mu.Lock()
+	s.killed = true
+	s.mu.Unlock()
+	return s.cmd.Process.Kill()
+}
+
+// Delete hard-removes a finished session row + its state log (FK
+// cascade). Live sessions refuse — terminate first (invalid_transition).
+func (m *Manager) Delete(ctx context.Context, id string) error {
+	m.mu.Lock()
+	_, live := m.live[id]
+	m.mu.Unlock()
+	if live {
+		return ErrStillLive
 	}
 	return m.q.DeleteSession(ctx, id)
+}
+
+// ClearFinished hard-removes every finished row (done/error/ended) +
+// logs. Returns the deleted ids so callers can fan out session.removed.
+func (m *Manager) ClearFinished(ctx context.Context) ([]string, error) {
+	rows, err := m.q.ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, r := range rows {
+		if IsFinished(domain.SessionState(r.State)) {
+			ids = append(ids, r.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return ids, nil
+	}
+	_, err = m.q.DeleteFinishedSessions(ctx)
+	return ids, err
+}
+
+// IsFinished is the delete-eligible state set — the process is gone.
+func IsFinished(st domain.SessionState) bool {
+	return st == domain.StateDone || st == domain.StateError || st == domain.StateEnded
 }
 
 // Scrollback pages the ring buffer — in-memory per session (no persistence;
@@ -198,7 +241,12 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	ctx := context.Background()
 	st := domain.StateDone
 	ec := sql.NullInt64{Int64: int64(code), Valid: true}
-	if code != 0 {
+	s.mu.Lock()
+	killed := s.killed
+	s.mu.Unlock()
+	if killed {
+		st = domain.StateEnded // deliberate terminate — not an error
+	} else if code != 0 {
 		st = domain.StateError
 	}
 	_ = m.q.UpdateSessionExit(ctx, gen.UpdateSessionExitParams{

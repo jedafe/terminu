@@ -8,8 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jedafe/terminu/internal/auth"
 	"github.com/jedafe/terminu/internal/broker"
@@ -27,10 +30,13 @@ type Server struct {
 	mgr  *session.Manager
 	bus  *session.EventBus
 	mux  *http.ServeMux
+
+	throttle loginThrottle
 }
 
 func New(cfg *config.Config, q *gen.Queries, a *auth.Service, b *broker.Broker, m *session.Manager, bus *session.EventBus) *Server {
-	s := &Server{cfg: cfg, q: q, auth: a, br: b, mgr: m, bus: bus, mux: http.NewServeMux()}
+	s := &Server{cfg: cfg, q: q, auth: a, br: b, mgr: m, bus: bus, mux: http.NewServeMux(),
+		throttle: loginThrottle{fails: map[string][]time.Time{}}}
 	s.routes()
 	return s
 }
@@ -86,6 +92,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/sessions", s.requireAuth(s.spawnSession))
 	s.mux.HandleFunc("GET /api/sessions/{id}", s.requireAuth(s.getSession))
 	s.mux.HandleFunc("PATCH /api/sessions/{id}", s.requireAuth(s.patchSession))
+	s.mux.HandleFunc("DELETE /api/sessions", s.requireAuth(s.clearFinished))
 	s.mux.HandleFunc("DELETE /api/sessions/{id}", s.requireAuth(s.killSession))
 	s.mux.HandleFunc("GET /api/sessions/{id}/scrollback", s.requireAuth(s.scrollback))
 	s.mux.HandleFunc("GET /api/agents", s.requireAuth(s.listAgents))
@@ -122,7 +129,52 @@ func mustList(m *session.Manager) []domain.Session {
 
 // ---------- auth ----------
 
+// loginThrottle is a small per-IP failure window — argon2 t=1 is ~50ms,
+// so without it /api/auth/login is an unthrottled brute-force surface.
+// rate_limited (429) is the cataloged response.
+type loginThrottle struct {
+	mu    sync.Mutex
+	fails map[string][]time.Time
+}
+
+const (
+	throttleWindow = 10 * time.Minute
+	throttleMax    = 5
+)
+
+func (t *loginThrottle) limited(ip string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	f := t.fails[ip]
+	keep := f[:0]
+	for _, ts := range f {
+		if now.Sub(ts) < throttleWindow {
+			keep = append(keep, ts)
+		}
+	}
+	t.fails[ip] = keep
+	if len(keep) == 0 {
+		delete(t.fails, ip)
+	}
+	return len(keep) >= throttleMax
+}
+
+func (t *loginThrottle) fail(ip string) {
+	t.mu.Lock()
+	t.fails[ip] = append(t.fails[ip], time.Now())
+	t.mu.Unlock()
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	if s.throttle.limited(ip) {
+		writeErr(w, 429, "rate_limited", "too many attempts — try again later")
+		return
+	}
 	var body struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -133,6 +185,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	token, err := s.auth.Login(r.Context(), body.Username, body.Password)
 	if err != nil {
+		s.throttle.fail(ip)
 		writeErr(w, 401, "unauthorized", "invalid credentials")
 		return
 	}
@@ -262,19 +315,32 @@ func (s *Server) patchSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"status": "ok"})
 }
 
+// killSession is the catalog's DELETE /api/sessions/{id}: a live session
+// is terminated → `ended` (row + log kept); a finished one is
+// hard-deleted with its state log.
 func (s *Server) killSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p := principal(r)
-	op := broker.Op{Actor: p, Action: "session.kill", Target: id, Risk: broker.RiskControlled}
-	if err := s.br.Check(op); err != nil {
-		writeErr(w, 403, "action_restricted", "role may not kill sessions")
-		return
-	}
-	if _, err := s.mgr.Get(r.Context(), id); err != nil {
+	rec, err := s.mgr.Get(r.Context(), id)
+	if err != nil {
 		writeErr(w, 404, "session_not_found", "no such session")
 		return
 	}
-	err := s.mgr.Kill(r.Context(), id)
+	finished := session.IsFinished(rec.State)
+	action := "session.kill"
+	if finished {
+		action = "session.delete"
+	}
+	op := broker.Op{Actor: p, Action: action, Target: id, Risk: broker.RiskControlled}
+	if err := s.br.Check(op); err != nil {
+		writeErr(w, 403, "action_restricted", "role may not modify sessions")
+		return
+	}
+	if finished {
+		err = s.mgr.Delete(r.Context(), id)
+	} else {
+		err = s.mgr.Kill(r.Context(), id)
+	}
 	res := "ok"
 	if err != nil {
 		res = "error"
@@ -288,8 +354,39 @@ func (s *Server) killSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "internal", err.Error())
 		return
 	}
-	s.bus.Pub(session.Event{Type: "session.removed", SessionID: id})
+	if finished {
+		s.bus.Pub(session.Event{Type: "session.removed", SessionID: id})
+	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+// clearFinished is DELETE /api/sessions — bulk hard-delete of all
+// finished rows (done/error/ended) and their state logs.
+func (s *Server) clearFinished(w http.ResponseWriter, r *http.Request) {
+	p := principal(r)
+	op := broker.Op{Actor: p, Action: "session.clear", Risk: broker.RiskControlled}
+	if err := s.br.Check(op); err != nil {
+		writeErr(w, 403, "action_restricted", "role may not clear sessions")
+		return
+	}
+	ids, err := s.mgr.ClearFinished(r.Context())
+	res := "ok"
+	if err != nil {
+		res = "error"
+	}
+	if aerr := s.br.Audit(r.Context(), op, res); aerr != nil {
+		slog.Error("audit write failed", "err", aerr)
+		writeErr(w, 500, "internal", "audit write failed")
+		return
+	}
+	if err != nil {
+		writeErr(w, 500, "internal", err.Error())
+		return
+	}
+	for _, id := range ids {
+		s.bus.Pub(session.Event{Type: "session.removed", SessionID: id})
+	}
+	writeJSON(w, 200, map[string]any{"cleared": len(ids)})
 }
 
 // scrollback returns buffered output bytes (concatenated) — client-side

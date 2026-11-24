@@ -32,6 +32,10 @@ WHERE state IN ('starting','working','waiting-for-input','detached','undetectabl
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;
 
+-- name: DeleteFinishedSessions :execrows
+-- Finished = process is gone; the row is only a log record.
+DELETE FROM sessions WHERE state IN ('done', 'error', 'ended');
+
 -- name: LogSessionState :exec
 INSERT INTO session_state_log (session_id, state, kind, confidence, evidence)
 VALUES (?, ?, ?, ?, ?);
