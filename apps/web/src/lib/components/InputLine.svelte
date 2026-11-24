@@ -12,7 +12,18 @@
 	let inp: HTMLInputElement;
 	let prev = '';
 
-	onMount(() => inp.focus());
+	onMount(() => {
+		inp.focus();
+		// Mobile browsers refuse programmatic focus without a gesture —
+		// retry on real pointer contact so the first touch lands the
+		// caret (and raises the keyboard) instead of needing a second tap.
+		const arm = () => {
+			inp.focus();
+			if (document.activeElement === inp) window.removeEventListener('pointerdown', arm);
+		};
+		window.addEventListener('pointerdown', arm);
+		return () => window.removeEventListener('pointerdown', arm);
+	});
 
 	// Armed keybar modifiers apply to the next keystroke from here too —
 	// keybar-Ctrl + keyboard-c must send \x03. Only the first char takes
