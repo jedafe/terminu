@@ -55,6 +55,7 @@ type ptySession struct {
 type StateUpdate struct {
 	State domain.SessionState
 	Match *adapter.StateMatch
+	At    time.Time // when this state began — wait-age ordering per §05
 }
 
 // spawnArgv builds the child argv per local-target mode (ADR-006).

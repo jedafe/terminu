@@ -5,7 +5,7 @@
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import { SearchAddon } from '@xterm/addon-search';
-	import { SessionClient } from '$lib/ws';
+	import { SessionClient, keystrokeToBytes, type PromptFrame } from '$lib/ws';
 	import { touchMode } from '$lib/stores';
 	import '@xterm/xterm/css/xterm.css';
 
@@ -20,6 +20,9 @@
 	let status = $state<'connecting' | 'live' | 'reconnecting' | 'dead'>('connecting');
 	let searchOpen = $state(false);
 	let searchQ = $state('');
+	let prompt = $state<PromptFrame | null>(null);
+	let maybeWaiting = $state(false);
+	let freeReply = $state('');
 
 	const encoder = new TextEncoder();
 
@@ -84,6 +87,19 @@
 			},
 			close: () => {
 				if (status !== 'dead') status = 'reconnecting';
+			},
+			// Ref: .teos/sections/05-agent-session-management.md — prompt
+			// overlay. Low-confidence waits hint only, never buttons.
+			state: (m) => {
+				maybeWaiting = m.state === 'waiting-for-input' && m.confidence === 'low' && !prompt;
+			},
+			prompt: (p) => {
+				prompt = p;
+				maybeWaiting = false;
+			},
+			promptClear: () => {
+				prompt = null;
+				maybeWaiting = false;
 			}
 		});
 		client.connect();
@@ -151,6 +167,50 @@
 	{/if}
 	{#if toastMsg}
 		<div class="toast">{toastMsg}</div>
+	{/if}
+
+	{#if prompt}
+		<div class="poverlay">
+			<div class="ptitle">
+				{prompt.title}
+				<button class="px" aria-label="dismiss" onclick={() => (prompt = null)}>✕</button>
+			</div>
+			{#if prompt.kind === 'freetext' || prompt.options.length === 0}
+				<form
+					class="pfree"
+					onsubmit={(e) => {
+						e.preventDefault();
+						if (freeReply) inject(freeReply + '\r');
+						freeReply = '';
+						prompt = null;
+					}}
+				>
+					<input
+						bind:value={freeReply}
+						placeholder="reply…"
+						autocapitalize="off"
+						autocorrect="off"
+						autocomplete="off"
+					/>
+					<button type="submit">send</button>
+				</form>
+			{:else}
+				<div class="prow">
+					{#each prompt.options as o}
+						<button
+							class="popt"
+							class:def={o.default}
+							onclick={() => {
+								inject(keystrokeToBytes(o.inject));
+								prompt = null;
+							}}>{o.label}</button
+						>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{:else if maybeWaiting}
+		<div class="maybe">may be waiting — no clear prompt detected</div>
 	{/if}
 
 	<div class="tools" class:open={searchOpen}>
@@ -221,6 +281,94 @@
 		font: 12px/1 ui-monospace, monospace;
 		padding: 7px 12px;
 		border-radius: 7px;
+		pointer-events: none;
+	}
+	/* §05 prompt overlay — touch-first action row above the term */
+	.poverlay {
+		position: absolute;
+		bottom: 10px;
+		left: 50%;
+		transform: translateX(-50%);
+		max-width: min(92%, 560px);
+		background: #131a26f2;
+		border: 1px solid #2b3b55;
+		border-radius: 10px;
+		padding: 10px 12px;
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+	}
+	.ptitle {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		color: #cfe0f5;
+		font: 13px/1.35 ui-monospace, monospace;
+		margin-bottom: 8px;
+		white-space: pre-wrap;
+	}
+	.px {
+		flex: none;
+		border: 0;
+		background: none;
+		color: #7a8aa0;
+		font-size: 14px;
+		padding: 4px;
+	}
+	.prow {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.popt {
+		min-height: 40px;
+		padding: 0 16px;
+		border: 1px solid #33415c;
+		border-radius: 8px;
+		background: #1b2536;
+		color: #dbe7f7;
+		font: 14px/1 ui-monospace, monospace;
+	}
+	.popt.def {
+		background: #1f5c8b;
+		border-color: #2f7cb3;
+	}
+	.popt:active {
+		background: #33415c;
+	}
+	.pfree {
+		display: flex;
+		gap: 8px;
+	}
+	.pfree input {
+		flex: 1;
+		height: 40px;
+		border: 1px solid #33415c;
+		border-radius: 8px;
+		background: #0d1420;
+		color: #e6e6e6;
+		padding: 0 10px;
+		font: 14px ui-monospace, monospace;
+	}
+	.pfree button {
+		height: 40px;
+		padding: 0 14px;
+		border: 1px solid #33415c;
+		border-radius: 8px;
+		background: #1f5c8b;
+		color: #dbe7f7;
+		font: 14px ui-monospace, monospace;
+	}
+	.maybe {
+		position: absolute;
+		bottom: 10px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: #2a2213f0;
+		border: 1px solid #4a3d1e;
+		color: #d8bd74;
+		font: 12px/1 ui-monospace, monospace;
+		padding: 8px 12px;
+		border-radius: 8px;
 		pointer-events: none;
 	}
 	.tools {

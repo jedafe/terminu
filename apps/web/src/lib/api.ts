@@ -38,7 +38,9 @@ export const api = {
 		req(`/api/sessions/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
 	workspaces: () => req<Workspace[]>('/api/workspaces'),
 	putWorkspace: (id: number, w: { name: string; layout: string; last_open_session?: string }) =>
-		req(`/api/workspaces/${id}`, { method: 'PUT', body: JSON.stringify(w) })
+		req(`/api/workspaces/${id}`, { method: 'PUT', body: JSON.stringify(w) }),
+	agents: () => req<AgentView[]>('/api/agents'),
+	agentPrompt: (id: string) => req<AgentPrompt>(`/api/agents/${id}/prompt`)
 };
 
 export interface Session {
@@ -71,4 +73,35 @@ export interface Workspace {
 	layout: string;
 	last_open_session?: string;
 	updated_at: string;
+}
+
+// §05 needs-you row — sessions ordered waiting-first by the server.
+export interface AgentView {
+	session: Session;
+	process: string;
+	tool?: string;
+	state: string;
+	kind?: string;
+	confidence?: string;
+	since: string;
+	prompt?: AgentPromptBody;
+}
+export interface AgentPromptBody {
+	kind: string;
+	title: string;
+	options: { label: string; inject: Keystroke; default?: boolean }[];
+}
+export interface AgentPrompt {
+	state: string;
+	kind?: string;
+	confidence?: string;
+	evidence?: string;
+	region?: { y0: number; y1: number };
+	prompt: AgentPromptBody | null;
+}
+export interface Keystroke {
+	kind: 'char' | 'text' | 'arrow_select' | 'escape';
+	char?: number;
+	text?: string;
+	arrows?: number;
 }

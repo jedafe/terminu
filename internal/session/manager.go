@@ -10,9 +10,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/jedafe/terminu/internal/adapter"
 	"github.com/jedafe/terminu/internal/config"
 	"github.com/jedafe/terminu/internal/db/gen"
 	"github.com/jedafe/terminu/internal/domain"
@@ -208,6 +210,81 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	m.events.Pub(Event{Type: "session.exited", SessionID: s.rec.ID, Session: s.rec})
 	// *→done|error is a catalog notify transition — agent.state carries it.
 	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, Process: fgName, State: st})
+}
+
+// AgentView is one row of GET /api/agents — the needs-you surface:
+// session identity + bound tool + detected state + live prompt.
+// Ref: .teos/sections/05-agent-session-management.md
+type AgentView struct {
+	Session    *domain.Session     `json:"session"`
+	Process    string              `json:"process"`
+	Tool       string              `json:"tool,omitempty"`
+	State      domain.SessionState `json:"state"`
+	Kind       domain.WaitKind     `json:"kind,omitempty"`
+	Confidence domain.Confidence   `json:"confidence,omitempty"`
+	Since      time.Time           `json:"since"`
+	Prompt     *adapter.Prompt     `json:"prompt,omitempty"`
+}
+
+// Agents returns live sessions in needs-you order: waiting-for-input
+// (highest confidence, then longest-waiting), then working states, then
+// done/error most-recent-first.
+func (m *Manager) Agents() []AgentView {
+	m.mu.Lock()
+	live := make([]*ptySession, 0, len(m.live))
+	for _, s := range m.live {
+		live = append(live, s)
+	}
+	m.mu.Unlock()
+
+	out := make([]AgentView, 0, len(live))
+	for _, s := range live {
+		u := s.CurrentState()
+		tool, _ := m.reg.Bound(s.rec.ID)
+		v := AgentView{
+			Session: s.rec, Process: m.reg.fgName(s.rec.ID),
+			Tool: tool, State: u.State, Since: u.At,
+		}
+		if u.Match != nil {
+			v.Kind, v.Confidence, v.Prompt = u.Match.Kind, u.Match.Confidence, u.Match.Prompt
+		}
+		out = append(out, v)
+	}
+
+	rank := func(st domain.SessionState) int {
+		switch st {
+		case domain.StateWaitingForInput:
+			return 0
+		case domain.StateDone, domain.StateError, domain.StateEnded:
+			return 2
+		default:
+			return 1
+		}
+	}
+	conf := func(c domain.Confidence) int {
+		switch c {
+		case domain.ConfidenceHigh:
+			return 0
+		case domain.ConfidenceMedium:
+			return 1
+		default:
+			return 2
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := rank(out[i].State), rank(out[j].State)
+		if ri != rj {
+			return ri < rj
+		}
+		if ri == 0 {
+			if ci, cj := conf(out[i].Confidence), conf(out[j].Confidence); ci != cj {
+				return ci < cj
+			}
+			return out[i].Since.Before(out[j].Since) // oldest wait first
+		}
+		return out[i].Since.After(out[j].Since) // recent first
+	})
+	return out
 }
 
 // onDetached notes last-detach time; the process keeps running.

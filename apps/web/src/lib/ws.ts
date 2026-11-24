@@ -7,7 +7,50 @@ export type SessionEvents = {
 	error: (code: string, message: string) => void;
 	open: (nextSeq: number) => void;
 	close: () => void;
+	state?: (m: StateFrame) => void;
+	prompt?: (p: PromptFrame) => void;
+	promptClear?: () => void;
 };
+
+// Ref: .teos/conventions/websocket-message-catalog.md — detection frames.
+export interface StateFrame {
+	state: string;
+	kind?: string;
+	confidence?: string;
+	evidence?: string;
+}
+export interface PromptOption {
+	label: string;
+	inject: Keystroke;
+	default?: boolean;
+}
+export interface PromptFrame {
+	kind: string;
+	title: string;
+	options: PromptOption[];
+}
+export interface Keystroke {
+	kind: 'char' | 'text' | 'arrow_select' | 'escape';
+	char?: number;
+	text?: string;
+	arrows?: number;
+}
+
+// keystrokeToBytes maps a detected option onto the same input path
+// physical keys use — the human taps, the app sends (ADR-001).
+export function keystrokeToBytes(k: Keystroke): string {
+	switch (k.kind) {
+		case 'char':
+			return String.fromCharCode(k.char ?? 0);
+		case 'text':
+			return (k.text ?? '') + '\r';
+		case 'arrow_select':
+			return '\x1b[B'.repeat(k.arrows ?? 0) + '\r';
+		case 'escape':
+			return '\x1b';
+	}
+	return '';
+}
 
 const BACKOFF = [500, 1000, 2000, 4000, 8000, 15000];
 
@@ -62,6 +105,15 @@ export class SessionClient {
 						this.lastSeq = 0; // snapshot follows
 					}
 					this.ev.error(msg.code, msg.message);
+					break;
+				case 'state':
+					this.ev.state?.(msg);
+					break;
+				case 'prompt':
+					this.ev.prompt?.(msg);
+					break;
+				case 'prompt_clear':
+					this.ev.promptClear?.();
 					break;
 			}
 		};

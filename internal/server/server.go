@@ -88,6 +88,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PATCH /api/sessions/{id}", s.requireAuth(s.patchSession))
 	s.mux.HandleFunc("DELETE /api/sessions/{id}", s.requireAuth(s.killSession))
 	s.mux.HandleFunc("GET /api/sessions/{id}/scrollback", s.requireAuth(s.scrollback))
+	s.mux.HandleFunc("GET /api/agents", s.requireAuth(s.listAgents))
+	s.mux.HandleFunc("GET /api/agents/{id}/prompt", s.requireAuth(s.agentPrompt))
 	s.mux.HandleFunc("GET /api/workspaces", s.requireAuth(s.listWorkspaces))
 	s.mux.HandleFunc("PUT /api/workspaces/{id}", s.requireAuth(s.putWorkspace))
 	s.mux.HandleFunc("GET /api/audit", s.requireAuth(s.listAudit))
@@ -203,6 +205,35 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, rec)
+}
+
+// ---------- agents (§05 needs-you) ----------
+
+func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, s.mgr.Agents())
+}
+
+// agentPrompt is the catalog's fetch path for the current detection —
+// session-socket attaches resync it too, but a list row shouldn't need
+// a full PTY attach to render its buttons.
+func (s *Server) agentPrompt(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.mgr.Attach(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, 404, "session_not_found", "no live session")
+		return
+	}
+	u := sess.CurrentState()
+	resp := map[string]any{
+		"state": u.State, "prompt": nil,
+	}
+	if u.Match != nil {
+		resp["kind"] = u.Match.Kind
+		resp["confidence"] = u.Match.Confidence
+		resp["region"] = u.Match.Region
+		resp["evidence"] = u.Match.Evidence
+		resp["prompt"] = u.Match.Prompt
+	}
+	writeJSON(w, 200, resp)
 }
 
 func (s *Server) patchSession(w http.ResponseWriter, r *http.Request) {

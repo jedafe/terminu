@@ -11,11 +11,14 @@
 		newPane,
 		closePane,
 		refreshSessions,
+		refreshAgents,
 		saveWorkspace,
 		restoreWorkspace,
 		wireEvents,
 		drawerOpen,
-		touchMode
+		touchMode,
+		orderedSessions,
+		agentStates
 	} from '$lib/stores';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
@@ -25,6 +28,7 @@
 
 	onMount(async () => {
 		await refreshSessions();
+		await refreshAgents();
 		await restoreWorkspace();
 		wireEvents();
 		if ($panes.length === 0) {
@@ -36,6 +40,16 @@
 
 	function isLive(s: Session) {
 		return ['starting', 'working', 'waiting-for-input', 'undetectable', 'detached'].includes(s.state);
+	}
+
+	// §05: detection state overrides the DB state for display — waiting
+	// rows surface "needs you".
+	function needsYou(s: Session) {
+		return $agentStates[s.id]?.state === 'waiting-for-input';
+	}
+	function stateLabel(s: Session) {
+		const st = $agentStates[s.id]?.state ?? s.state;
+		return st === 'waiting-for-input' ? 'needs you' : st;
 	}
 
 	function scheduleSave() {
@@ -133,11 +147,11 @@
 				<span>sessions</span>
 				<button class="tb" onclick={spawn}>+ new</button>
 			</div>
-			{#each $sessions as s (s.id)}
-				<div class="srow" role="button" tabindex="0" onclick={() => openSession(s)} onkeydown={() => openSession(s)}>
-					<span class="dot" class:live={isLive(s)} class:dead={!isLive(s)}></span>
+			{#each $orderedSessions as s (s.id)}
+				<div class="srow" class:needs={needsYou(s)} role="button" tabindex="0" onclick={() => openSession(s)} onkeydown={() => openSession(s)}>
+					<span class="dot" class:live={isLive(s)} class:dead={!isLive(s)} class:needs={needsYou(s)}></span>
 					<span class="sname">{label(s)}</span>
-					<span class="smeta">{s.state}</span>
+					<span class="smeta" class:needs={needsYou(s)}>{stateLabel(s)}</span>
 					<button class="skill" onclick={(e) => killSession(s.id, e)}>✕</button>
 				</div>
 			{/each}
@@ -282,8 +296,18 @@
 	.dot.live {
 		background: #3ddc84;
 	}
+	.dot.needs {
+		background: #f0b429;
+		box-shadow: 0 0 6px #f0b42980;
+	}
 	.dot.dead {
 		background: #5a3540;
+	}
+	.srow.needs {
+		background: #1a160c;
+	}
+	.smeta.needs {
+		color: #f0b429;
 	}
 	.sname {
 		flex: 1;

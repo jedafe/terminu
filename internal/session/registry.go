@@ -8,6 +8,7 @@ package session
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/jedafe/terminu/internal/adapter"
 	"github.com/jedafe/terminu/internal/domain"
@@ -122,7 +123,7 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 		return // nothing changed — no write, no emit
 	}
 	b.lastKey = key
-	b.lastUp = StateUpdate{State: st, Match: m}
+	b.lastUp = StateUpdate{State: st, Match: m, At: time.Now()}
 	b.mu.Unlock()
 
 	_ = r.m.setState(context.Background(), s.rec.ID, st, string(kind), string(confidence), evidence)
