@@ -43,11 +43,14 @@
 		focused = false;
 		if (!coarse() || !armed) return;
 		const el = document.activeElement as HTMLElement | null;
+		// Deliberate focus moves stand — any real control (button,
+		// link, field, drawer/keybar/menu contents) keeps it. We only
+		// pull focus back when it falls to the page/terminal itself.
 		if (el && el !== document.body) {
-			if (el.closest('.drawer')) return;
 			if (
+				el.closest('.drawer') ||
 				el.matches(
-					'input:not(.xterm-helper-textarea), textarea:not(.xterm-helper-textarea), [contenteditable="true"]'
+					'input:not(.xterm-helper-textarea), textarea:not(.xterm-helper-textarea), [contenteditable="true"], button, a[href], select, [role="button"]'
 				)
 			)
 				return;
@@ -60,19 +63,23 @@
 		// suggestion strip); valid per spec but not in TS's DOM lib yet.
 		inp.setAttribute('inputmode', 'verbatim');
 		if (armed) inp.focus();
-		// Mobile browsers refuse programmatic focus without a gesture —
-		// retry on real pointer contact so the first touch lands the
-		// caret (and raises the keyboard) instead of needing a second tap.
-		const armFn = () => {
-			if (!armed) {
-				window.removeEventListener('pointerdown', armFn);
+		// Re-arm on real pointer contact — persistent, not one-shot —
+		// but only on dead space / the terminal surface. Taps on real
+		// controls (buttons, links, menus, keybar, drawer) belong to
+		// those controls and must not resurrect the keyboard.
+		const rearm = (e: PointerEvent) => {
+			if (!armed) return;
+			const t = e.target as HTMLElement | null;
+			if (
+				t?.closest(
+					'button, a[href], input, textarea, select, [role="button"], .keybar, .drawer, .tools, .poverlay'
+				)
+			)
 				return;
-			}
 			inp.focus();
-			if (document.activeElement === inp) window.removeEventListener('pointerdown', armFn);
 		};
-		window.addEventListener('pointerdown', armFn);
-		return () => window.removeEventListener('pointerdown', armFn);
+		window.addEventListener('pointerdown', rearm);
+		return () => window.removeEventListener('pointerdown', rearm);
 	});
 
 	// Armed keybar modifiers apply to the next keystroke from here too —
