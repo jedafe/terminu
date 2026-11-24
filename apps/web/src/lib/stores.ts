@@ -78,7 +78,9 @@ export const activePane = writable<string | null>(null);
 export const workspaces = writable<Workspace[]>([]);
 export const activeWorkspace = writable<number>(1);
 export const drawerOpen = writable<boolean>(false);
-export const touchMode = writable<'select' | 'mouse'>('select');
+// Default 'mouse': taps/clicks drive the TUI when it holds the mouse —
+// the "active" touch mode. 'select' (text-select/copy) is the opt-in.
+export const touchMode = writable<'select' | 'mouse'>('mouse');
 
 let paneSeq = 0;
 export function newPane(sessionId: string) {
