@@ -32,5 +32,17 @@ rsync -a --delete apps/web/build/ internal/server/web/
 go build -o "$BIN.new" ./cmd/terminu-server
 mv "$BIN.new" "$BIN"
 
-sudo -n systemctl restart terminu
-systemctl --no-pager status terminu | head -5
+if [[ "${1:-}" == "--no-restart" ]]; then
+	echo "binary swapped at $BIN — restart deferred:"
+	echo "  sudo systemctl restart terminu"
+	echo "(live sessions keep running the old build until then)"
+	exit 0
+fi
+
+# Restart via a transient timer, outside this process tree: sessions are
+# server-owned, so a synchronous restart kills every live PTY — including
+# the caller's own if this runs inside a terminu-hosted devin/shell.
+# The timer survives the caller's death; the bounce still happens.
+sudo -n systemd-run --unit=terminu-bounce --on-active=2 \
+	systemctl restart terminu
+echo "restart scheduled in ~2s — any terminu session running this will end"
