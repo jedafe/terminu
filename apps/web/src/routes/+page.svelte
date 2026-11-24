@@ -421,7 +421,6 @@
 						onrequestinput={() => (kbdOpen = true)}
 						onpull={termPull}
 						onpullrelease={termPullEnd}
-						onpaste={() => paste(p.id)}
 					/>
 				</div>
 			</section>

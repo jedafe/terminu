@@ -16,15 +16,13 @@
 		active = false,
 		onrequestinput,
 		onpull,
-		onpullrelease,
-		onpaste
+		onpullrelease
 	}: {
 		sessionId: string;
 		active?: boolean;
 		onrequestinput?: () => void;
 		onpull?: (dy: number) => void;
 		onpullrelease?: (dy: number) => void;
-		onpaste?: () => void;
 	} = $props();
 
 	let el: HTMLDivElement;
@@ -188,17 +186,52 @@
 		cancelLp();
 		if (!p) return;
 		lastGesture = Date.now(); // dedupes Android's contextmenu echo
-		if (get(touchMode) === 'mouse' && tuiMouse()) {
-			rightClickAt(p.x, p.y);
-			return;
-		}
-		const row = rowAt(p.y);
-		term.selectLines(row, row);
+		openCtx(p.x, p.y);
+	}
+
+	// Context menu — the system-menu analogue for a canvas terminal.
+	// Always the gesture target; "Send right-click" is an item when a
+	// TUI holds the mouse, so the app path stays reachable.
+	let ctx: { x: number; y: number; row: number; sel: string; tui: boolean } | null =
+		$state(null);
+
+	function openCtx(x: number, y: number) {
+		ctx = {
+			x: Math.min(x, innerWidth - 196),
+			y: Math.min(y, innerHeight - 240),
+			row: rowAt(y),
+			sel: term.hasSelection() ? term.getSelection() : '',
+			tui: get(touchMode) === 'mouse' && tuiMouse()
+		};
+	}
+
+	function ctxCopy() {
+		if (ctx?.sel) void navigator.clipboard?.writeText(ctx.sel);
+		ctx = null;
+	}
+	function ctxCopyLine() {
+		if (!ctx) return;
+		term.selectLines(ctx.row, ctx.row);
 		const text = term.getSelection();
-		if (text) {
-			void navigator.clipboard?.writeText(text);
-			toast('line copied');
+		if (text) void navigator.clipboard?.writeText(text).then(() => toast('line copied'));
+		ctx = null;
+	}
+	async function ctxPaste() {
+		ctx = null;
+		try {
+			const t = await navigator.clipboard.readText();
+			if (t) pasteText(t);
+		} catch {
+			/* clipboard perm denied */
 		}
+	}
+	function ctxSelectAll() {
+		term.selectAll();
+		ctx = null;
+	}
+	function ctxRightClick() {
+		if (ctx) rightClickAt(ctx.x, ctx.y);
+		ctx = null;
 	}
 
 	// Short tap: a TUI holding the mouse owns the click (xterm's native
@@ -274,8 +307,7 @@
 			// Android fires contextmenu for the same long-press lpFire already
 			// handled — the window dedupes; desktop right-clicks pass through.
 			if (Date.now() - lastGesture < 600) return;
-			if (get(touchMode) === 'mouse' && tuiMouse()) rightClickAt(e.clientX, e.clientY);
-			else onpaste?.(); // shell isn't listening → paste, not silence
+			openCtx(e.clientX, e.clientY);
 		});
 
 		// Capture beats xterm's own bubble listener: the real press never
@@ -413,6 +445,22 @@
 		<div class="maybe">may be waiting — no clear prompt detected</div>
 	{/if}
 
+	{#if ctx}
+		<!-- svelte-ignore a11y_no_static_element_interactions — backdrop only -->
+		<div class="ctxshade" onpointerdown={() => (ctx = null)} oncontextmenu={(e) => e.preventDefault()}></div>
+		<div class="ctx" style:left="{ctx.x}px" style:top="{ctx.y}px" role="menu">
+			{#if ctx.sel}
+				<button class="cx" role="menuitem" onclick={ctxCopy}>copy</button>
+			{/if}
+			<button class="cx" role="menuitem" onclick={ctxCopyLine}>copy line</button>
+			<button class="cx" role="menuitem" onclick={ctxPaste}>paste</button>
+			<button class="cx" role="menuitem" onclick={ctxSelectAll}>select all</button>
+			{#if ctx.tui}
+				<button class="cx" role="menuitem" onclick={ctxRightClick}>send right-click</button>
+			{/if}
+		</div>
+	{/if}
+
 	<div class="tools" class:open={searchOpen}>
 		<button
 			class="tool"
@@ -466,6 +514,37 @@
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar) {
 		display: none;
+	}
+	.ctxshade {
+		position: fixed;
+		inset: 0;
+		z-index: 55;
+	}
+	.ctx {
+		position: fixed;
+		z-index: 56;
+		min-width: 168px;
+		background: #11161f;
+		border: 1px solid #2b3b55;
+		border-radius: 10px;
+		padding: 4px;
+		box-shadow: 0 8px 28px rgb(0 0 0 / 0.5);
+	}
+	.cx {
+		display: block;
+		width: 100%;
+		min-height: 40px;
+		padding: 8px 14px;
+		border: none;
+		border-radius: 7px;
+		background: none;
+		color: #d7e1f0;
+		font: 14px ui-monospace, monospace;
+		text-align: left;
+	}
+	.cx:active,
+	.cx:hover {
+		background: #1e2a3d;
 	}
 	.banner {
 		position: absolute;
