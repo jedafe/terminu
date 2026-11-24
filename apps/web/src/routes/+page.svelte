@@ -42,6 +42,45 @@
 	// focused field visible.
 	let shellH = $state(0);
 
+	// Pull-to-refresh: a downward drag outside the terminal surface
+	// refreshes sessions/agents/alerts. Touches inside .pterm belong to
+	// xterm's own scroll/click gestures — never hijacked.
+	const PTR_TRIP = 64;
+	const PTR_MAX = 96;
+	let pullStart = -1;
+	let pull = $state(0);
+	let ptrBusy = $state(false);
+
+	function ptrDown(e: PointerEvent) {
+		if (e.pointerType !== 'touch' || ptrBusy) return;
+		const t = e.target as Element;
+		if (t.closest('.pterm')) return;
+		const sc = t.closest('.drawer');
+		if (sc && sc.scrollTop > 0) return; // mid-list drag scrolls
+		pullStart = e.clientY;
+	}
+	function ptrMove(e: PointerEvent) {
+		if (pullStart < 0) return;
+		const dy = e.clientY - pullStart;
+		if (dy > 6) pull = Math.min(PTR_MAX, dy);
+		else if (pull) pull = 0;
+	}
+	function ptrEnd() {
+		if (pullStart < 0) return;
+		pullStart = -1;
+		if (pull < PTR_TRIP) {
+			pull = 0;
+			return;
+		}
+		pull = 0;
+		ptrBusy = true;
+		void (async () => {
+			await refreshSessions();
+			await Promise.allSettled([refreshAgents(), refreshAlerts()]);
+			ptrBusy = false;
+		})();
+	}
+
 	onMount(() => {
 		const vv = window.visualViewport;
 		const syncVV = () => (shellH = vv ? vv.height + vv.offsetTop : 0);
@@ -200,7 +239,20 @@
 	}
 </script>
 
-<div class="shell" style:height={shellH > 0 ? `${shellH}px` : undefined}>
+<!-- svelte-ignore a11y_no_static_element_interactions — gesture layer, not keyboard -->
+<div
+	class="shell"
+	style:height={shellH > 0 ? `${shellH}px` : undefined}
+	onpointerdown={ptrDown}
+	onpointermove={ptrMove}
+	onpointerup={ptrEnd}
+	onpointercancel={ptrEnd}
+>
+	{#if pull > 0 || ptrBusy}
+		<div class="ptr" style:transform={`translateY(${ptrBusy ? 40 : Math.min(pull, 80)}px)`}>
+			{ptrBusy ? 'refreshing…' : pull >= PTR_TRIP ? 'release to refresh' : '↓ pull to refresh'}
+		</div>
+	{/if}
 	<!-- top bar: sessions drawer + panes + mode toggle -->
 	<header class="topbar">
 		<button class="tb" aria-label="sessions" onclick={() => drawerOpen.update((v) => !v)}>
@@ -379,6 +431,21 @@
 		flex-direction: column;
 		background: #0a0e14;
 	}
+	.ptr {
+		position: fixed;
+		top: 0;
+		left: 50%;
+		margin-left: -70px;
+		z-index: 60;
+		background: #131a26f2;
+		border: 1px solid #2b3b55;
+		border-radius: 999px;
+		color: #9db2ce;
+		font: 12px/1 ui-monospace, monospace;
+		padding: 8px 14px;
+		pointer-events: none;
+		transition: transform 0.05s;
+	}
 	.topbar {
 		display: flex;
 		align-items: center;
@@ -458,6 +525,9 @@
 		border-bottom: 1px solid #22304a;
 		max-height: 60dvh;
 		overflow-y: auto;
+		/* keep downward drags at scroll-top for pull-to-refresh —
+		   don't let the browser claim them as overscroll */
+		overscroll-behavior: contain;
 	}
 	.dhead {
 		display: flex;
