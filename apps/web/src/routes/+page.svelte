@@ -658,9 +658,26 @@
 		border-bottom: 1px solid #22304a;
 		max-height: 60dvh;
 		overflow-y: auto;
+		overflow-y: overlay; /* float over the list where supported */
+		scrollbar-width: auto;
+		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 		/* keep downward drags at scroll-top for pull-to-refresh —
 		   don't let the browser claim them as overscroll */
 		overscroll-behavior: contain;
+	}
+	.drawer::-webkit-scrollbar {
+		width: 12px;
+		background: transparent;
+	}
+	.drawer::-webkit-scrollbar-thumb {
+		background: rgba(255, 255, 255, 0.3);
+		border-radius: 4px;
+	}
+	.drawer::-webkit-scrollbar-thumb:hover {
+		background: rgba(255, 255, 255, 0.45);
+	}
+	.drawer::-webkit-scrollbar-track {
+		background: transparent;
 	}
 	.dhead {
 		display: flex;

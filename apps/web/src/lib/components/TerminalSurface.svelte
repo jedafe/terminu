@@ -122,6 +122,10 @@
 
 		const ro = new ResizeObserver(() => sendResize());
 		ro.observe(el);
+		// The viewport's clientWidth shrinks when the scrollbar gutter
+		// appears — refit or the screen canvas paints over the thumb.
+		const vp = el.querySelector('.xterm-viewport');
+		if (vp) ro.observe(vp);
 		return () => ro.disconnect();
 	});
 
