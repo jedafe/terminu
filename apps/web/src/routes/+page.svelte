@@ -3,6 +3,7 @@
      server-owned sessions — closing one never kills the process. -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import interact from 'interactjs';
 	import { api, type Session } from '$lib/api';
 	import {
 		sessions,
@@ -157,93 +158,138 @@
 		);
 	}
 
-	// Drag a pane — from its strip tab or from a frame's title bar —
-	// onto another frame to swap occupants, or onto the strip to reorder.
-	function tabDown(e: PointerEvent, id: string) {
-		if (e.button !== 0 || (e.target as Element).closest('button')) return;
-		const tab = e.currentTarget as HTMLElement;
-		const x0 = e.clientX;
-		const y0 = e.clientY;
-		let dragging = false;
-		// Touch: drag arms only on a 350ms hold — earlier movement is
-		// claimed by tab-strip scroll or pull-to-refresh.
-		let armed = e.pointerType !== 'touch';
-		const armTimer = armed ? 0 : setTimeout(() => (armed = true), 350);
+	// Drag & drop via interact.js — a tab drags onto a frame (assign) or
+	// onto another tab (move on the edge third, swap on the center). The
+	// dragged tab itself translates with the pointer. Touch drags arm on
+	// a 350ms hold so strip scrolling and pull-to-refresh keep early
+	// movement; mouse drags start immediately.
+	function initDnd() {
+		let gx = 0,
+			gy = 0,
+			x0 = 0,
+			y0 = 0,
+			didDrag = false;
 		const clearHints = () =>
 			document
 				.querySelectorAll('.drop-hint')
 				.forEach((t) => t.classList.remove('drop-hint', 'hint-before', 'hint-after', 'hint-swap', 'hint-assign'));
-		const cleanup = () => {
-			clearTimeout(armTimer);
-			window.removeEventListener('pointermove', move);
-			window.removeEventListener('pointerup', up);
-			window.removeEventListener('pointercancel', cancel);
-		};
-		const cancel = () => {
-			cleanup();
-			dragging = false;
-			tab.classList.remove('dragging');
+		const hintAt = (x: number, y: number, dragEl: Element) => {
 			clearHints();
-		};
-		const move = (ev: PointerEvent) => {
-			const dx = ev.clientX - x0;
-			const dy = ev.clientY - y0;
-			if (!dragging) {
-				if (!armed) {
-					if (Math.hypot(dx, dy) > 10) cleanup(); // scroll/pull owns it
-					return;
-				}
-				if (Math.hypot(dx, dy) <= 8) return;
-				dragging = true;
-				justDragged = true;
-				tab.classList.add('dragging');
-			}
-			clearHints();
-			const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+			const hit = document.elementFromPoint(x, y);
 			const cell = hit?.closest<HTMLElement>('.pane[data-cell]');
 			if (cell) {
 				cell.classList.add('drop-hint', 'hint-assign');
 				return;
 			}
 			const el = hit?.closest<HTMLElement>('.pane-tab');
-			if (el && el !== tab) {
+			if (el && el !== dragEl) {
 				const r = el.getBoundingClientRect();
-				const f = (ev.clientX - r.left) / r.width;
+				const f = (x - r.left) / r.width;
 				el.classList.add('drop-hint', f < 0.33 ? 'hint-before' : f > 0.67 ? 'hint-after' : 'hint-swap');
 			}
 		};
-		const up = (ev: PointerEvent) => {
-			cleanup();
-			tab.classList.remove('dragging');
-			// The synthetic click lands before the timeout — suppress it
-			// during a drag, then reset for the next plain click.
-			setTimeout(() => (justDragged = false), 0);
-			if (dragging) {
-				const hit = document.elementFromPoint(ev.clientX, ev.clientY);
-				const cell = hit?.closest<HTMLElement>('.pane[data-cell]');
-				if (cell?.dataset.cell) {
-					const [r, c] = cell.dataset.cell.split(':').map(Number);
-					assignCell(id, r, c);
-					scheduleSave();
-				} else {
-					const el = hit?.closest<HTMLElement>('.pane-tab');
-					const pid = el?.dataset.pid;
-					if (el && el !== tab && pid) {
-						const r = el.getBoundingClientRect();
-						const f = (ev.clientX - r.left) / r.width;
-						const toIdx = $panes.findIndex((x) => x.id === pid);
-						if (f < 0.33) movePane(id, toIdx);
-						else if (f > 0.67) movePane(id, toIdx + 1);
-						else swapPanes(id, pid);
-						scheduleSave();
+
+		const tabs = interact('.pane-tab')
+			.draggable({
+				manualStart: true,
+				ignoreFrom: 'button',
+				listeners: {
+					start(ev) {
+						didDrag = false;
+						(ev.target as HTMLElement).classList.add('dnd-drag');
+					},
+					move(ev) {
+						gx += ev.dx;
+						gy += ev.dy;
+						const t = ev.target as HTMLElement;
+						t.style.transform = `translate(${gx}px, ${gy}px)`;
+						didDrag = true;
+						hintAt(ev.clientX, ev.clientY, t);
+					},
+					end(ev) {
+						const t = ev.target as HTMLElement;
+						t.style.transform = '';
+						t.classList.remove('dnd-drag');
+						clearHints();
+						if (didDrag) {
+							// The synthetic click lands right after pointerup —
+							// suppress it, then reset for the next plain click.
+							justDragged = true;
+							setTimeout(() => (justDragged = false), 0);
+						}
 					}
 				}
+			})
+			.on('down', (ev) => {
+				const { interaction, interactable, currentTarget } = ev;
+				x0 = ev.clientX;
+				y0 = ev.clientY;
+				gx = 0;
+				gy = 0;
+				if (ev.pointerType !== 'touch') {
+					interaction.start({ name: 'drag' }, interactable, currentTarget);
+					return;
+				}
+				const arm = setTimeout(() => {
+					stop();
+					interaction.start({ name: 'drag' }, interactable, currentTarget);
+				}, 350);
+				const watch = (p: PointerEvent) => {
+					if (Math.hypot(p.clientX - x0, p.clientY - y0) > 10) stop();
+				};
+				const stop = () => {
+					clearTimeout(arm);
+					window.removeEventListener('pointermove', watch, true);
+					window.removeEventListener('pointerup', stop, true);
+					window.removeEventListener('pointercancel', stop, true);
+				};
+				window.addEventListener('pointermove', watch, true);
+				window.addEventListener('pointerup', stop, true);
+				window.addEventListener('pointercancel', stop, true);
+			});
+
+		const cells = interact('.pane[data-cell]').dropzone({
+			accept: '.pane-tab',
+			overlap: 'pointer',
+			ondrop: (ev) => {
+				const id = (ev.relatedTarget as HTMLElement).dataset.pid;
+				const k = (ev.target as HTMLElement).dataset.cell;
+				if (!id || !k) return;
+				const [r, c] = k.split(':').map(Number);
+				assignCell(id, r, c);
+				scheduleSave();
 			}
-			clearHints();
+		});
+
+		const tabZones = interact('.pane-tab').dropzone({
+			accept: '.pane-tab',
+			// The dragged tab travels with the pointer — without this it
+			// is always its own topmost dropzone and swallows every drop.
+			checker: (dragEvent, event, dropped, dropzone, dropEl) => {
+				if (dropEl === dragEvent.currentTarget) return false;
+				const r = dropEl.getBoundingClientRect();
+				return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+			},
+			ondrop: (ev) => {
+				const el = ev.target as HTMLElement;
+				const id = (ev.relatedTarget as HTMLElement).dataset.pid;
+				const pid = el.dataset.pid;
+				if (!id || !pid || el === ev.relatedTarget) return;
+				const r = el.getBoundingClientRect();
+				const f = (ev.dragEvent.clientX - r.left) / r.width;
+				const toIdx = $panes.findIndex((x) => x.id === pid);
+				if (f < 0.33) movePane(id, toIdx);
+				else if (f > 0.67) movePane(id, toIdx + 1);
+				else swapPanes(id, pid);
+				scheduleSave();
+			}
+		});
+
+		return () => {
+			tabs.unset();
+			cells.unset();
+			tabZones.unset();
 		};
-		window.addEventListener('pointermove', move);
-		window.addEventListener('pointerup', up, { once: true });
-		window.addEventListener('pointercancel', cancel, { once: true });
 	}
 
 	function ptrDown(e: PointerEvent) {
@@ -319,6 +365,7 @@
 			if (pullStart >= 0 && e.cancelable) e.preventDefault();
 		};
 		shellEl.addEventListener('touchmove', guard, { passive: false });
+		const cleanupDnd = initDnd();
 		const tick = setInterval(() => (now = Date.now()), 15000);
 		void (async () => {
 			await refreshSessions();
@@ -334,6 +381,7 @@
 		})();
 		return () => {
 			clearInterval(tick);
+			cleanupDnd();
 			shellEl.removeEventListener('touchmove', guard);
 			vv?.removeEventListener('resize', syncVV);
 			vv?.removeEventListener('scroll', syncVV);
@@ -513,7 +561,6 @@
 					data-pid={p.id}
 					role="button"
 					tabindex="0"
-					onpointerdown={(e) => tabDown(e, p.id)}
 					onclick={() => {
 						if (justDragged) {
 							justDragged = false;
@@ -693,6 +740,12 @@
 								class="pempty"
 								onclick={(e) => {
 									e.stopPropagation();
+									// A drop landing here also fires a click —
+									// swallow it so the picker doesn't pop.
+									if (justDragged) {
+										justDragged = false;
+										return;
+									}
 									const k = `${ri}:${ci}`;
 									focusCell = k;
 									pickCell = pickCell === k ? null : k;
@@ -899,6 +952,12 @@
 		white-space: nowrap;
 		flex-shrink: 0;
 		cursor: pointer;
+		/* Horizontal swipes keep scrolling the strip; vertical moves
+		   stay ours so an armed drag can't be stolen. */
+		touch-action: pan-x;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 	.pane-tab.active {
 		background: #1c2a44;
@@ -1204,8 +1263,16 @@
 	.divider:hover {
 		background: #22304a;
 	}
-	:global(.pane-tab.dragging) {
-		opacity: 0.4;
+	:global(.pane-tab.dnd-drag) {
+		position: relative;
+		z-index: 50;
+		opacity: 0.85;
+		box-shadow: 0 4px 14px #000c;
+		cursor: grabbing;
+		will-change: transform;
+		/* The ghost follows the pointer — without this it masks the
+		   drop target in hit-tests. */
+		pointer-events: none;
 	}
 	:global(.pane-tab.hint-swap) {
 		outline: 1px solid #4cc9f0;
