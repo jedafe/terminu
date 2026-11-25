@@ -676,23 +676,6 @@
 						}}
 					>
 						{#if p}
-							{#if $panes.length > 1}
-								<!-- svelte-ignore a11y_no_static_element_interactions — drag handle -->
-								<div class="ptitle" onpointerdown={(e) => tabDown(e, p.id)}>
-									{label(sessionOf(p.sessionId))}
-									<span class="pbtns">
-										<button
-											class="pswitch"
-											title="switch the session in this frame"
-											onclick={(e) => {
-												e.stopPropagation();
-												const k = `${ri}:${ci}`;
-												pickCell = pickCell === k ? null : k;
-											}}>▾</button
-										><button class="pclose" onclick={(e) => { e.stopPropagation(); closePane(p.id); scheduleSave(); }}>✕</button>
-									</span>
-								</div>
-							{/if}
 							<div class="pterm">
 								{#key cell.paneId}
 									<TerminalSurface
@@ -1268,20 +1251,6 @@
 	.pempty:hover {
 		color: #5a6f92;
 	}
-	.pbtns {
-		display: flex;
-	}
-	.pswitch {
-		border: 0;
-		background: transparent;
-		color: #4a5f82;
-		font-size: 12px;
-		padding: 12px 8px;
-		cursor: pointer;
-	}
-	.pswitch:hover {
-		color: #8fb2e8;
-	}
 	/* Per-frame session switcher: lists every open tab, swaps the pick
 	   into this frame. pickback is a fixed click-away scrim. */
 	.pickback {
@@ -1332,26 +1301,6 @@
 	}
 	.pane.focused {
 		border-color: #22304a;
-	}
-	.ptitle {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 3px 8px;
-		background: #0d1117;
-		color: #6b7f9e;
-		font: 11px ui-monospace, monospace;
-		flex-shrink: 0;
-		user-select: none;
-		cursor: grab;
-	}
-	.pclose {
-		border: 0;
-		background: transparent;
-		color: #5a3540;
-		font-size: 12px;
-		padding: 12px 14px;
-		cursor: pointer;
 	}
 	.pterm {
 		flex: 1;
