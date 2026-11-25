@@ -202,8 +202,23 @@
 		saveTimer = setTimeout(() => void saveWorkspace(), 1200);
 	}
 
-	async function spawn() {
-		const s = await api.spawn({ cols: 120, rows: 30 });
+	let shellPick = $state(false);
+	let pickX = $state(0);
+	let pickY = $state(0);
+	function toggleShellPick(e: MouseEvent) {
+		if (shellPick) {
+			shellPick = false;
+			return;
+		}
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		pickX = Math.min(r.left, innerWidth - 180);
+		pickY = r.bottom + 6;
+		shellPick = true;
+	}
+
+	async function spawn(shell?: string) {
+		shellPick = false;
+		const s = await api.spawn({ cols: 120, rows: 30, shell });
 		await refreshSessions();
 		newPane(s.id);
 		scheduleSave();
@@ -326,7 +341,7 @@
 					>
 				</div>
 			{/each}
-			<button class="tb add" aria-label="new session" onclick={spawn}>+</button>
+			<button class="tb add" aria-label="new session" onclick={toggleShellPick}>+</button>
 		</div>
 		<button
 			class="tb mode"
@@ -338,6 +353,16 @@
 		</button>
 	</header>
 
+	{#if shellPick}
+		<!-- svelte-ignore a11y_no_static_element_interactions — backdrop only -->
+		<div class="shade" onpointerdown={() => (shellPick = false)} oncontextmenu={(e) => e.preventDefault()}></div>
+		<div class="shellpick" style:left="{pickX}px" style:top="{pickY}px" role="menu">
+			<button class="cx" role="menuitem" onclick={() => spawn('/bin/bash')}>bash</button>
+			<button class="cx" role="menuitem" onclick={() => spawn('/bin/zsh')}>zsh</button>
+			<button class="cx" role="menuitem" onclick={() => spawn('/bin/fish')}>fish</button>
+		</div>
+	{/if}
+
 	<!-- session drawer: alerts, then grouped needs-you / running / finished -->
 	{#if $drawerOpen}
 		{@const unacked = $alerts.filter((a) => !a.acked_at)}
@@ -347,7 +372,7 @@
 		<div class="drawer">
 			<div class="dhead">
 				<span>sessions</span>
-				<button class="tb" onclick={spawn}>+ new</button>
+				<button class="tb" onclick={toggleShellPick}>+ new</button>
 			</div>
 
 			{#if unacked.length > 0}
@@ -427,7 +452,7 @@
 		{/each}
 		{#if $panes.length === 0}
 			<div class="empty-main">
-				<button class="bigspawn" onclick={spawn}>open a session</button>
+				<button class="bigspawn" onclick={toggleShellPick}>open a session</button>
 			</div>
 		{/if}
 	</main>
@@ -494,6 +519,37 @@
 		display: flex;
 		flex-direction: column;
 		background: #0a0e14;
+	}
+	.shade {
+		position: fixed;
+		inset: 0;
+		z-index: 55;
+	}
+	.shellpick {
+		position: fixed;
+		z-index: 56;
+		min-width: 120px;
+		background: #11161f;
+		border: 1px solid #2b3b55;
+		border-radius: 10px;
+		padding: 4px;
+		box-shadow: 0 8px 28px rgb(0 0 0 / 0.5);
+	}
+	.cx {
+		display: block;
+		width: 100%;
+		min-height: 40px;
+		padding: 8px 14px;
+		border: none;
+		border-radius: 7px;
+		background: none;
+		color: #d7e1f0;
+		font: 14px ui-monospace, monospace;
+		text-align: left;
+	}
+	.cx:active,
+	.cx:hover {
+		background: #1e2a3d;
 	}
 	.ptr {
 		position: fixed;
