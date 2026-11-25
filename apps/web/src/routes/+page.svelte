@@ -27,6 +27,7 @@
 		grid,
 		onGrid,
 		assignCell,
+		cellPos,
 		applyPreset,
 		sizeCellPair,
 		sizeRowPair
@@ -84,6 +85,8 @@
 	// Pane resize + reorder: dividers redistribute a pair's weight,
 	// tab drags swap panes into grid slots. Both persist via scheduleSave.
 	let cellCount = $derived($grid.reduce((n, r) => n + r.cells.length, 0));
+	// Which frame's session-switcher is open ("r:c"), or null.
+	let pickCell = $state<string | null>(null);
 	let gridEl: HTMLElement;
 	let rowEls: (HTMLElement | undefined)[] = [];
 	let justDragged = false;
@@ -151,8 +154,10 @@
 		);
 	}
 
+	// Drag a pane — from its strip tab or from a frame's title bar —
+	// onto another frame to swap occupants, or onto the strip to reorder.
 	function tabDown(e: PointerEvent, id: string) {
-		if (e.button !== 0 || (e.target as Element).closest('.tabx')) return;
+		if (e.button !== 0 || (e.target as Element).closest('button')) return;
 		const tab = e.currentTarget as HTMLElement;
 		const x0 = e.clientX;
 		const y0 = e.clientY;
@@ -655,10 +660,21 @@
 						}}
 					>
 						{#if p}
-							{#if cellCount > 1}
-								<div class="ptitle">
+							{#if $panes.length > 1}
+								<!-- svelte-ignore a11y_no_static_element_interactions — drag handle -->
+								<div class="ptitle" onpointerdown={(e) => tabDown(e, p.id)}>
 									{label(sessionOf(p.sessionId))}
-									<button class="pclose" onclick={(e) => { e.stopPropagation(); closePane(p.id); scheduleSave(); }}>✕</button>
+									<span class="pbtns">
+										<button
+											class="pswitch"
+											title="switch the session in this frame"
+											onclick={(e) => {
+												e.stopPropagation();
+												const k = `${ri}:${ci}`;
+												pickCell = pickCell === k ? null : k;
+											}}>▾</button
+										><button class="pclose" onclick={(e) => { e.stopPropagation(); closePane(p.id); scheduleSave(); }}>✕</button>
+									</span>
 								</div>
 							{/if}
 							<div class="pterm">
@@ -674,7 +690,35 @@
 								{/key}
 							</div>
 						{:else}
-							<div class="pempty">drop a tab here</div>
+							<button
+								class="pempty"
+								onclick={(e) => {
+									e.stopPropagation();
+									const k = `${ri}:${ci}`;
+									pickCell = pickCell === k ? null : k;
+								}}>drop a tab here, or pick a session ▾</button
+							>
+						{/if}
+						{#if pickCell === `${ri}:${ci}`}
+							<!-- svelte-ignore a11y_no_static_element_interactions — click-away -->
+							<div class="pickback" onpointerdown={(e) => { e.stopPropagation(); pickCell = null; }}></div>
+							<div class="cellpick">
+								{#each $panes as pp}
+									<button
+										class="pick"
+										class:cur={pp.id === cell.paneId}
+										onclick={(e) => {
+											e.stopPropagation();
+											assignCell(pp.id, ri, ci);
+											pickCell = null;
+											scheduleSave();
+										}}
+									>
+										<span class="plabel">{label(sessionOf(pp.sessionId))}</span>
+										<span class="pwhere">{cellPos($grid, pp.id) ?? 'pool'}</span>
+									</button>
+								{/each}
+							</div>
 						{/if}
 					</section>
 				{/each}
@@ -1180,6 +1224,7 @@
 		flex-direction: column;
 		min-height: 0;
 		min-width: 0;
+		position: relative;
 		background: #0a0e14;
 		border: 1px solid transparent;
 	}
@@ -1196,6 +1241,76 @@
 		color: #39485e;
 		font: 11px ui-monospace, monospace;
 		user-select: none;
+		border: 0;
+		background: transparent;
+		appearance: none;
+		padding: 0;
+		cursor: pointer;
+	}
+	.pempty:hover {
+		color: #5a6f92;
+	}
+	.pbtns {
+		display: flex;
+	}
+	.pswitch {
+		border: 0;
+		background: transparent;
+		color: #4a5f82;
+		font-size: 12px;
+		padding: 12px 8px;
+		cursor: pointer;
+	}
+	.pswitch:hover {
+		color: #8fb2e8;
+	}
+	/* Per-frame session switcher: lists every open tab, swaps the pick
+	   into this frame. pickback is a fixed click-away scrim. */
+	.pickback {
+		position: fixed;
+		inset: 0;
+		z-index: 40;
+	}
+	.cellpick {
+		position: absolute;
+		top: 26px;
+		right: 4px;
+		z-index: 41;
+		display: flex;
+		flex-direction: column;
+		min-width: 140px;
+		background: #0d1117;
+		border: 1px solid #1c2940;
+		border-radius: 8px;
+		overflow: hidden;
+		box-shadow: 0 6px 24px #000a;
+	}
+	.pick {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 14px;
+		border: 0;
+		background: transparent;
+		color: #9fb4d0;
+		font: 12px ui-monospace, monospace;
+		padding: 9px 12px;
+		text-align: left;
+		cursor: pointer;
+	}
+	.pick:hover {
+		background: #141d2e;
+	}
+	.pick.cur {
+		color: #cfe3ff;
+		background: #16233a;
+	}
+	.pwhere {
+		color: #3d4f6d;
+		font-size: 10px;
+	}
+	.pick.cur .pwhere {
+		color: #6f8ab5;
 	}
 	.pane.focused {
 		border-color: #22304a;
@@ -1209,6 +1324,8 @@
 		color: #6b7f9e;
 		font: 11px ui-monospace, monospace;
 		flex-shrink: 0;
+		user-select: none;
+		cursor: grab;
 	}
 	.pclose {
 		border: 0;
@@ -1216,6 +1333,7 @@
 		color: #5a3540;
 		font-size: 12px;
 		padding: 12px 14px;
+		cursor: pointer;
 	}
 	.pterm {
 		flex: 1;

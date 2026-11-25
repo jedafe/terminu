@@ -226,6 +226,12 @@ export function assignCell(paneId: string, r: number, c: number) {
 	});
 }
 
+// cellPos returns the "r:c" slot key a pane occupies, or null when pool-only.
+export function cellPos(rows: GridRow[], paneId: string): string | null {
+	const at = cellOf(rows, paneId);
+	return at ? `${at.r}:${at.c}` : null;
+}
+
 // cellOf locates the slot a pane occupies, or null when it's pool-only.
 function cellOf(rows: GridRow[], paneId: string): { r: number; c: number } | null {
 	for (let r = 0; r < rows.length; r++)
