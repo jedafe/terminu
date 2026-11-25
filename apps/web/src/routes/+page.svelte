@@ -17,7 +17,6 @@
 		restoreWorkspace,
 		wireEvents,
 		drawerOpen,
-		touchMode,
 		orderedSessions,
 		agentStates,
 		alerts,
@@ -580,14 +579,6 @@
 			{/each}
 			<button class="tb add" aria-label="new session" onclick={toggleShellPick}>+</button>
 		</div>
-		<button
-			class="tb mode"
-			class:on={$touchMode === 'mouse'}
-			title="touch mode: select = copy text, mouse = drive TUIs"
-			onclick={() => touchMode.update((m) => (m === 'select' ? 'mouse' : 'select'))}
-		>
-			{$touchMode === 'select' ? '⇱' : '🖱'}
-		</button>
 	</header>
 
 	{#if shellPick}
@@ -1001,10 +992,6 @@
 	}
 	.tabx:active {
 		color: #ff8080;
-	}
-	.mode.on {
-		background: #1f4d3a;
-		border-color: #2f7d5b;
 	}
 	.drawer {
 		position: absolute;

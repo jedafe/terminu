@@ -97,8 +97,11 @@ export const activePane = writable<string | null>(null);
 export const workspaces = writable<Workspace[]>([]);
 export const activeWorkspace = writable<number>(1);
 export const drawerOpen = writable<boolean>(false);
-// Default 'mouse': taps/clicks drive the TUI when it holds the mouse —
-// the "active" touch mode. 'select' (text-select/copy) is the opt-in.
+// Default 'mouse': taps/clicks drive the TUI when it holds the mouse.
+// 'select' is an armed episode — set by the long-press menu's "select"
+// item, it forces highlight drags (synthesized shift+press) until a
+// menu action or "cancel select" ends it. KeyBar's armed Shift forces
+// a single selection gesture without touching this.
 export const touchMode = writable<'select' | 'mouse'>('mouse');
 
 // Sticky keybar modifiers, shared by KeyBar + InputLine: arm one, the

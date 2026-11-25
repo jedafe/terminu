@@ -8,7 +8,7 @@
 	import { SearchAddon } from '@xterm/addon-search';
 	import { Unicode11Addon } from '@xterm/addon-unicode11';
 	import { SessionClient, keystrokeToBytes, type PromptFrame } from '$lib/ws';
-	import { touchMode } from '$lib/stores';
+	import { touchMode, kbdMods } from '$lib/stores';
 	import '@xterm/xterm/css/xterm.css';
 
 	let {
@@ -193,18 +193,20 @@
 		cancelLp();
 		client?.detach();
 		term?.dispose();
+		// An armed select episode is scoped to this pane's lifetime —
+		// never let it leak into whatever mounts next.
+		if (get(touchMode) === 'select') touchMode.set('mouse');
 	});
 
 	// --- touch layer (§02/§11): the pointer contract on mobile ---
-	// mouse mode + TUI holding the mouse: taps/long-press/contextmenu
+	// default + TUI holding the mouse: taps/long-press/contextmenu
 	//   re-dispatch real button reports the TUI understands.
-	// no TUI listening (plain shell): right-click → paste (PuTTY
-	//   convention), long-press → copy line — always visible feedback.
-	// select mode: primary mousedown is re-dispatched shift-modified —
-	//   xterm then takes its built-in forced-selection path (the desktop
-	//   Shift+drag escape) even while a TUI owns the mouse. On touch,
-	//   long-press copies the tapped row — canvas/WebGL have no DOM text
-	//   for the browser's own selection.
+	// select armed (ctx-menu "select" or a sticky-Shift keybar tap):
+	//   primary mousedown is re-dispatched shift-modified — xterm takes
+	//   its built-in forced-selection path (the desktop Shift+drag
+	//   escape) even while a TUI owns the mouse. Shift-arm is per-
+	//   gesture; menu-armed 'select' holds until a menu action or
+	//   "cancel select" ends the episode.
 	const LP_MS = 450;
 	const LP_MOVE = 12;
 	let lpTimer: ReturnType<typeof setTimeout> | undefined;
@@ -269,19 +271,27 @@
 		};
 	}
 
+	// Any ctx action completes the interaction — an armed 'select'
+	// episode ends with it. ctxSelect is the one item that manages the
+	// arming itself (toggle), so it skips this.
+	function endCtx() {
+		ctx = null;
+		touchMode.set('mouse');
+	}
+
 	function ctxCopy() {
 		if (ctx?.sel) void navigator.clipboard?.writeText(ctx.sel);
-		ctx = null;
+		endCtx();
 	}
 	function ctxCopyLine() {
 		if (!ctx) return;
 		term.selectLines(ctx.row, ctx.row);
 		const text = term.getSelection();
 		if (text) void navigator.clipboard?.writeText(text).then(() => toast('line copied'));
-		ctx = null;
+		endCtx();
 	}
 	async function ctxPaste() {
-		ctx = null;
+		endCtx();
 		try {
 			const t = await navigator.clipboard.readText();
 			if (t) pasteText(t);
@@ -291,30 +301,49 @@
 	}
 	function ctxSelectAll() {
 		term.selectAll();
-		ctx = null;
+		endCtx();
 	}
 	function ctxRightClick() {
 		if (ctx) rightClickAt(ctx.x, ctx.y);
+		endCtx();
+	}
+	// Armed select: drags force-highlight (synthesized shift+mousedown)
+	// even while a TUI owns the mouse. The arm has to survive to the
+	// copy step — a plain press would clobber the highlight — so it
+	// holds until a menu action or this same item cancels it.
+	function ctxSelect() {
+		const armed = get(touchMode) === 'select';
 		ctx = null;
+		if (armed) {
+			touchMode.set('mouse');
+		} else {
+			touchMode.set('select');
+			toast('select armed — drag to highlight; long-press to cancel');
+		}
 	}
 
 	// Short tap: a TUI holding the mouse owns the click (xterm's native
-	// touch path already reported it). Otherwise the tap asks for the
-	// input line — the terminal's whole surface is the on-ramp to typing.
+	// touch path already reported it). A selection gesture — armed
+	// select or armed Shift — turned the press into shift+click, never
+	// an input request. Otherwise the tap asks for the input line — the
+	// surface is the on-ramp to typing.
 	function tap() {
-		if (get(touchMode) === 'mouse' && (term?.modes?.mouseTrackingMode ?? 'none') !== 'none') return;
+		if (gestureSel || tuiMouse()) return;
 		onrequestinput?.();
 	}
 
 	// Pull-to-refresh inside the terminal: armed only when the viewport
 	// already sits at the oldest scrollback line AND no TUI holds the
-	// mouse — otherwise the drag keeps its normal job (scroll/TUI wheel).
+	// mouse — otherwise the drag keeps its normal job (scroll/TUI
+	// wheel). A selection gesture is never a pull.
 	let pullStart = -1;
 	let pullX = -1;
+	let gestureSel = false;
 	function armPull(e: PointerEvent) {
 		pullStart = -1;
 		if (!onpull && !onpullrelease) return;
 		if (e.pointerType !== 'touch') return;
+		if (gestureSel) return;
 		if ((term?.modes?.mouseTrackingMode ?? 'none') !== 'none') return;
 		if (term.buffer.active.viewportY !== 0) return;
 		pullStart = e.clientY;
@@ -324,6 +353,10 @@
 	function armTouchLayer() {
 		el.addEventListener('pointerdown', (e) => {
 			if (e.pointerType !== 'touch') return;
+			// Decided here because compat mouse events arrive late —
+			// pointerdown precedes the mousedown that consumes an armed
+			// Shift, so tap()/armPull can't rely on the store.
+			gestureSel = get(touchMode) === 'select' || get(kbdMods).shift;
 			lpPt = { x: e.clientX, y: e.clientY };
 			lpAt = Date.now();
 			lpTimer = setTimeout(lpFire, LP_MS);
@@ -356,6 +389,7 @@
 				onpullrelease?.(e.clientY - pullStart);
 				pullStart = -1;
 			}
+			gestureSel = false;
 			cancelLp();
 		});
 		el.addEventListener('pointercancel', () => {
@@ -363,6 +397,7 @@
 				onpullrelease?.(0);
 				pullStart = -1;
 			}
+			gestureSel = false;
 			cancelLp();
 		});
 
@@ -374,19 +409,33 @@
 			openCtx(e.clientX, e.clientY);
 		});
 
-		// Capture beats xterm's own bubble listener: the real press never
-		// reaches it, the shift-marked copy does → forced selection.
+		// Capture beats xterm's own bubble listener: while a TUI holds the
+		// mouse, a plain press is a mouse report — stop the real event and
+		// re-dispatch a shift-marked copy so xterm takes its force-select
+		// path (the desktop Shift+drag escape). detail must carry over:
+		// the selection service only anchors on detail === 1. When no TUI
+		// claims the mouse a plain drag already selects — synthesizing
+		// shift there would hit xterm's extend-only incremental path and
+		// anchor nothing, so the real event passes through.
+		// Triggers on an armed 'select' episode OR an armed keybar Shift —
+		// either way the arm is consumed for this gesture.
 		el.addEventListener(
 			'mousedown',
 			(e) => {
-				if (get(touchMode) !== 'select' || e.button !== 0) return;
+				if (e.button !== 0) return;
+				const shiftArmed = get(kbdMods).shift;
+				if (get(touchMode) !== 'select' && !shiftArmed) return;
 				if ((e as unknown as { __tsynth?: boolean }).__tsynth) return;
+				// Consume only shift — an armed ctrl/alt keeps waiting for a keystroke.
+				if (shiftArmed) kbdMods.update((m) => ({ ...m, shift: false }));
+				if (!tuiMouse()) return;
 				e.stopPropagation();
 				const ev = new MouseEvent('mousedown', {
 					bubbles: true,
 					cancelable: true,
 					shiftKey: true,
 					button: 0,
+					detail: e.detail || 1,
 					clientX: e.clientX,
 					clientY: e.clientY
 				});
@@ -533,6 +582,9 @@
 			{/if}
 			<button class="cx" role="menuitem" onclick={ctxCopyLine}>copy line</button>
 			<button class="cx" role="menuitem" onclick={ctxPaste}>paste</button>
+			<button class="cx" role="menuitem" onclick={ctxSelect}
+				>{$touchMode === 'select' ? 'cancel select' : 'select'}</button
+			>
 			<button class="cx" role="menuitem" onclick={ctxSelectAll}>select all</button>
 			{#if ctx.tui}
 				<button class="cx" role="menuitem" onclick={ctxRightClick}>send right-click</button>
