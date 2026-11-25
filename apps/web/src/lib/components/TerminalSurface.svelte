@@ -122,10 +122,6 @@
 
 		const ro = new ResizeObserver(() => sendResize());
 		ro.observe(el);
-		// The viewport's clientWidth shrinks when the scrollbar gutter
-		// appears — refit or the screen canvas paints over the thumb.
-		const vp = el.querySelector('.xterm-viewport');
-		if (vp) ro.observe(vp);
 		return () => ro.disconnect();
 	});
 
@@ -515,6 +511,10 @@
 	   position feedback — no track background over the terminal. */
 	.tsurface :global(.xterm-viewport) {
 		overflow-y: overlay; /* float over content where supported — no gutter */
+		/* Classic-scrollbar UAs: reserve the gutter permanently so the
+		   screen canvas never overlaps the thumb (border-box RO can't
+		   see content-box changes). */
+		scrollbar-gutter: stable;
 		scrollbar-width: auto;
 		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 	}
