@@ -723,13 +723,15 @@
 									/>
 								{/key}
 							</div>
-							<div
-								class="fgrab"
-								data-pid={p.id}
-								role="button"
-								tabindex="-1"
-								title="drag onto another frame or a tab to swap">⠿</div
-							>
+							{#if cellCount > 1}
+								<div
+									class="fgrab"
+									data-pid={p.id}
+									role="button"
+									tabindex="-1"
+									title="drag onto another frame or a tab to swap">⠿</div
+								>
+							{/if}
 						{:else}
 							<button
 								class="pempty"

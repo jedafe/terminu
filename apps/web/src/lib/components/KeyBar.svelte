@@ -55,10 +55,13 @@
 
 <div class="keybar">
 	{#if ontogglekbd}
+		<!-- armed = the keyboard's up, which is the quiet default — the
+		     button lights only while the keyboard is down, when it's the
+		     thing you'd actually reach for. -->
 		<button
 			class="k mod"
-			class:armed={kbdOn}
-			title="type — opens the input line (reliable mobile input)"
+			class:armed={!kbdOn}
+			title={kbdOn ? 'hide keyboard' : 'show keyboard'}
 			onpointerdown={(e) => e.preventDefault()}
 			onclick={ontogglekbd}>⌨</button
 		>
