@@ -77,6 +77,10 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 	if t.Kind != "local" {
 		return "", nil, errors.New("target kind unsupported in Phase 1: " + t.Kind)
 	}
+	// Managed shell env crosses via each shell's own mechanism —
+	// ZDOTDIR → zsh, -C source → fish, --rcfile → bash — all as argv
+	// commands, so sudo env_reset and su can't strip them.
+	argv := m.shellArgv(shell)
 	switch m.cfg.LocalTargetMode {
 	case "nsenter":
 		user := orDefault(m.cfg.HostUser, "japa")
@@ -86,7 +90,7 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		// allocates a fresh pty inside the host namespaces and relays
 		// I/O — the inner shell gets a real ctty.
 		inner := "cd " + shellQuote(orDefault(cwd, "/home/"+user))
-		inner += " && exec script -qfc " + shellQuote("exec "+shell+" -l") + " /dev/null"
+		inner += " && exec script -qfc " + shellQuote("exec "+strings.Join(argv, " ")) + " /dev/null"
 		return "nsenter", []string{
 			"-t", "1", "-m", "-u", "-i", "-n", "-p",
 			"su", user, "-c", inner,
@@ -97,12 +101,32 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		// user needs NOPASSWD sudo; sudo keeps our host-devpts ctty so
 		// job control stays native — no relay needed (ADR-006 option 1).
 		if u := m.cfg.HostUser; u != "" && u != currentUser() {
-			return "sudo", []string{"-n", "-iu", u, "--", shell, "-l"}, nil
+			return "sudo", append([]string{"-n", "-iu", u, "--"}, argv...), nil
 		}
-		return shell, []string{"-l"}, nil
+		return argv[0], argv[1:], nil
 	default: // container — plain spawn as the service user
-		return shell, []string{"-l"}, nil
+		return argv[0], argv[1:], nil
 	}
+}
+
+// shellArgv builds the interactive invocation for a login shell —
+// with the managed env layer when that shell has one.
+func (m *Manager) shellArgv(shell string) []string {
+	switch filepath.Base(shell) {
+	case "zsh":
+		if m.env.ZshDir != "" {
+			return []string{"env", "ZDOTDIR=" + m.env.ZshDir, shell, "-l"}
+		}
+	case "fish":
+		if m.env.FishFile != "" {
+			return []string{shell, "-l", "-C", "source " + m.env.FishFile}
+		}
+	case "bash":
+		if m.env.BashFile != "" {
+			return []string{shell, "--rcfile", m.env.BashFile, "-l"}
+		}
+	}
+	return []string{shell, "-l"}
 }
 
 func orDefault(s, def string) string {

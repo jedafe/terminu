@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/terminu/internal/db/gen"
 	"github.com/jedafe/terminu/internal/domain"
 	"github.com/jedafe/terminu/internal/proc"
+	"github.com/jedafe/terminu/internal/shellenv"
 )
 
 // Manager is the session registry — the only PTY spawn point, reached
@@ -39,6 +40,10 @@ type Manager struct {
 	// reg is the session-state registry — gate events → Detect →
 	// waiting states (§06 pipeline consumer).
 	reg *registry
+
+	// env is the materialized managed shell layer — empty fields
+	// degrade those shells to plain spawns.
+	env shellenv.Env
 }
 
 var ErrNotFound = errors.New("session not found")
@@ -48,6 +53,7 @@ var ErrStillLive = errors.New("session still live — terminate before delete")
 func NewManager(cfg *config.Config, q *gen.Queries, bus *EventBus) *Manager {
 	m := &Manager{cfg: cfg, q: q, live: map[string]*ptySession{}, events: bus}
 	m.reg = newRegistry(m)
+	m.env = shellenv.Materialize(cfg.DataDir)
 	return m
 }
 
