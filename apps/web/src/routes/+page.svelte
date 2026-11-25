@@ -164,19 +164,31 @@
 		let gx = 0,
 			gy = 0,
 			didDrag = false;
+		// The highlighted target under the pointer is what a drop commits —
+		// hint and commit can never disagree, and nothing depends on
+		// dropzone event timing.
+		let hint: { kind: 'cell'; r: number; c: number } | { kind: 'tab'; pid: string } | null = null;
+		let dragPid: string | null = null;
 		const clearHints = () =>
 			document
 				.querySelectorAll('.drop-hint')
-				.forEach((t) => t.classList.remove('drop-hint', 'hint-before', 'hint-after', 'hint-swap', 'hint-assign'));
+				.forEach((t) => t.classList.remove('drop-hint', 'hint-swap', 'hint-assign'));
 		const hintAt = (x: number, y: number) => {
 			clearHints();
+			hint = null;
 			const hit = document.elementFromPoint(x, y);
 			const cell = hit?.closest<HTMLElement>('.pane[data-cell]');
-			if (cell) {
+			if (cell?.dataset.cell) {
+				const [r, c] = cell.dataset.cell.split(':').map(Number);
+				hint = { kind: 'cell', r, c };
 				cell.classList.add('drop-hint', 'hint-assign');
 				return;
 			}
-			hit?.closest<HTMLElement>('.pane-tab')?.classList.add('drop-hint', 'hint-swap');
+			const tab = hit?.closest<HTMLElement>('.pane-tab');
+			if (tab?.dataset.pid) {
+				hint = { kind: 'tab', pid: tab.dataset.pid };
+				tab.classList.add('drop-hint', 'hint-swap');
+			}
 		};
 
 		// Drag source is the frame's grab handle (.fgrab), not the tab —
@@ -188,6 +200,8 @@
 				listeners: {
 					start(ev) {
 						didDrag = false;
+						hint = null;
+						dragPid = (ev.target as HTMLElement).dataset.pid ?? null;
 						(ev.target as HTMLElement).classList.add('dnd-drag');
 					},
 					move(ev) {
@@ -202,13 +216,29 @@
 						const t = ev.target as HTMLElement;
 						t.style.transform = '';
 						t.classList.remove('dnd-drag');
+						// Re-resolve at release coords; if nothing resolves,
+						// keep the last move's hint as the drop target.
+						const last = hint;
+						hintAt(ev.clientX, ev.clientY);
+						hint ??= last;
 						clearHints();
-						if (didDrag) {
-							// The synthetic click lands right after pointerup —
-							// suppress it, then reset for the next plain click.
-							justDragged = true;
-							setTimeout(() => (justDragged = false), 0);
-						}
+						if (!didDrag) return;
+						// The synthetic click lands right after pointerup —
+						// suppress it, then reset for the next plain click.
+						justDragged = true;
+						setTimeout(() => (justDragged = false), 0);
+						if (!hint || !dragPid) return;
+						if (hint.kind === 'cell' && cellPos($grid, dragPid) !== `${hint.r}:${hint.c}`) {
+							assignCell(dragPid, hint.r, hint.c);
+						} else if (hint.kind === 'tab' && hint.pid !== dragPid) {
+							// Drop on a pool tab → that tab fills the dragged
+							// session's frame; the session returns to the pool.
+							const src = cellPos($grid, dragPid);
+							if (!src) return;
+							const [r, c] = src.split(':').map(Number);
+							assignCell(hint.pid, r, c);
+						} else return;
+						scheduleSave();
 					}
 				}
 			})
@@ -218,41 +248,7 @@
 				ev.interaction.start({ name: 'drag' }, ev.interactable, ev.currentTarget);
 			});
 
-		// Drop on a frame → the two occupants swap slots.
-		const cells = interact('.pane[data-cell]').dropzone({
-			accept: '.fgrab',
-			overlap: 'pointer',
-			ondrop: (ev) => {
-				const id = (ev.relatedTarget as HTMLElement).dataset.pid;
-				const k = (ev.target as HTMLElement).dataset.cell;
-				if (!id || !k || k === cellPos($grid, id)) return;
-				const [r, c] = k.split(':').map(Number);
-				assignCell(id, r, c);
-				scheduleSave();
-			}
-		});
-
-		// Drop on a pool tab → that tab fills the dragged session's frame
-		// and the dragged session returns to the pool.
-		const tabZones = interact('.pane-tab').dropzone({
-			accept: '.fgrab',
-			overlap: 'pointer',
-			ondrop: (ev) => {
-				const id = (ev.relatedTarget as HTMLElement).dataset.pid;
-				const tabPid = (ev.target as HTMLElement).dataset.pid;
-				const src = id ? cellPos($grid, id) : null;
-				if (!id || !tabPid || tabPid === id || !src) return;
-				const [r, c] = src.split(':').map(Number);
-				assignCell(tabPid, r, c);
-				scheduleSave();
-			}
-		});
-
-		return () => {
-			grabs.unset();
-			cells.unset();
-			tabZones.unset();
-		};
+		return () => grabs.unset();
 	}
 
 	function ptrDown(e: PointerEvent) {
