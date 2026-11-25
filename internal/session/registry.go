@@ -154,7 +154,11 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 			Kind:       kind,
 			Confidence: confidence,
 		})
-		if b.alertEdge(prev, st, time.Now(), r.m.alertRearm()) {
+		// A low-confidence wait is a guess — the UI hints "may be
+		// waiting" only; persisting it as an alert would promote a
+		// guess into a row (AGENTS.md: never promote a low-conf wait).
+		alertable := st != domain.StateWaitingForInput || confidence != domain.ConfidenceLow
+		if alertable && b.alertEdge(prev, st, time.Now(), r.m.alertRearm()) {
 			r.m.alert(s.rec.ID, fg.Name(), prev, st, kind, confidence)
 		}
 		return
