@@ -34,9 +34,11 @@ command -q zoxide; and zoxide init fish | source
 # alt screen), leaving the prompt lines hanging above its block on a
 # shallow pane. ED(2)+CUP before exec puts the block flush at the top;
 # cleared lines still live in the session's server-side scrollback log.
+# Same match set as the zsh/bash hooks, plus fish's and/or/begin and
+# newline-separated command lines.
 function __tu_preclear_inline_tui --on-event fish_preexec
-    string match -qr '(^|&&|\|\||;|\|)\s*(command |sudo |exec )*(\S*/)*devin(\s|;|\||&|$)' -- $argv
-        and printf '\033[H\033[2J'
+    set -l re '(^|&&|\|\||;|\||\(|\{|\n)\s*((command|builtin|exec|noglob|time|nohup|doas|nice|sudo|env|then|do|elif|else|and|or|begin|-[A-Za-z0-9]+|[A-Za-z_][A-Za-z0-9_]*=\S+)\s+)*(\S*/)*devin(\s|;|\||&|\)|\}|$)'
+    string match -qr -- $re $argv; and printf '\033[H\033[2J'
 end
 `
 
@@ -58,10 +60,24 @@ case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$P
 command -v fzf >/dev/null 2>&1 && eval "$(fzf --bash 2>/dev/null)"
 command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init bash)"
 
-# Inline-TUI preclear — bash has no preexec, so wrap the launch path
-# directly; same effect as the zsh/fish hooks. devin paints its UI
-# inline (no alt screen) — ED(2) first puts its block at pane top.
-command -v devin >/dev/null 2>&1 && devin() { printf '\033[H\033[2J'; command devin "$@"; }
+# bash is not a login shell anymore (--rcfile needs interactive
+# non-login) — restore the muscle-memory builtin.
+logout() { builtin exit "$@"; }
+
+# Inline-TUI preclear — bash has no preexec, so the DEBUG trap evaluates
+# each simple command before it runs; $BASH_COMMAND is the post-alias,
+# post-expansion command ("cd x && devin" fires once for "cd", once for
+# "devin"). Same match set as the zsh/fish hooks, but it catches every
+# invocation form — sudo/exec/path/pipelines — a wrapper function can't.
+# Replaces any user DEBUG trap; misses just keep the old look.
+__tu_preclear_re=$'(^|&&|\\|\\||;|\\||\\(|\\{|\n)[[:space:]]*((command|builtin|exec|noglob|time|nohup|doas|nice|sudo|env|then|do|elif|else|-[A-Za-z0-9]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+)[[:space:]]+)*([^[:space:]]*/)*devin([[:space:];|&)}]|$)'
+__tu_preclear_inline_tui() {
+    [[ -n $__tu_pc ]] && return 0 # guard DEBUG re-entry inside the handler
+    __tu_pc=1
+    [[ $BASH_COMMAND =~ $__tu_preclear_re ]] && printf '\033[H\033[2J'
+    __tu_pc=
+}
+trap '__tu_preclear_inline_tui' DEBUG
 `
 
 // Materialize writes the embedded/config trees under <dataDir> —

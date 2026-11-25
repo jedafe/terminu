@@ -18,8 +18,11 @@ type Event struct {
 	SessionID string          `json:"session_id,omitempty"`
 	Session   *domain.Session `json:"session,omitempty"`
 
-	// agent.state frame (catalog): fg process + detected state.
+	// agent.state frame (catalog): fg process + detected state. Tool is
+	// the bound adapter name when the fg matched a curated adapter —
+	// it rebinds per fg change, so it rides every emit live.
 	Process    string              `json:"process,omitempty"`
+	Tool       string              `json:"tool,omitempty"`
 	State      domain.SessionState `json:"state,omitempty"`
 	Kind       domain.WaitKind     `json:"kind,omitempty"`
 	Confidence domain.Confidence   `json:"confidence,omitempty"`

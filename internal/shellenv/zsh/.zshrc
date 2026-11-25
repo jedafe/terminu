@@ -17,9 +17,12 @@ PROMPT_EOL_MARK=''
 # lines still live in the session's server-side scrollback log. Only
 # tools verified to render this way belong here; alt-screen tools
 # already cover the frame.
+# Separators: start/&&/||/;/|/(/{\n. Lead tokens cover qualifiers with
+# args (sudo -E, env K=V, nice), K=V assignments, and keyword bodies
+# (then/do/else/elif); what the regex misses just keeps the old look.
+typeset -r __tu_preclear_re=$'(^|&&|\\|\\||;|\\||\\(|\\{|\n)[[:space:]]*((command|builtin|exec|noglob|time|nohup|doas|nice|sudo|env|then|do|elif|else|-[A-Za-z0-9]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+)[[:space:]]+)*([^[:space:]]*/)*devin([[:space:];|&)}]|$)'
 tu_preclear_inline_tui() {
-    [[ "$3" =~ '(^|&&|\|\||;|\|)[[:space:]]*(command |sudo |exec )*([^[:space:]]*/)*devin([[:space:];|&]|$)' ]] \
-        && printf '\e[H\e[2J'
+    [[ "$3" =~ "$__tu_preclear_re" ]] && printf '\e[H\e[2J'
 }
 autoload -Uz add-zsh-hook
 add-zsh-hook preexec tu_preclear_inline_tui

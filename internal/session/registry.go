@@ -151,13 +151,18 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 
 	// agent.state carries the fg name + detected state — emit whenever
 	// either changes so clients mirror the Agents() view live (tab
-	// labels read Process; needs-you reads State). `alert` rows persist
-	// only the EDGE (prev != st): a repeat detect of the same wait is
-	// not a transition (§05).
+	// labels read Process/Tool; needs-you reads State). `alert` rows
+	// persist only the EDGE (prev != st): a repeat detect of the same
+	// wait is not a transition (§05).
+	var tool string
+	if ad != nil {
+		tool = ad.Pin().Tool
+	}
 	r.m.events.Pub(Event{
 		Type:       "agent.state",
 		SessionID:  s.rec.ID,
 		Process:    fg.Name(),
+		Tool:       tool,
 		State:      st,
 		Kind:       kind,
 		Confidence: confidence,

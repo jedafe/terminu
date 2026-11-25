@@ -299,6 +299,7 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	m.mu.Unlock()
 	fgName := m.reg.fgName(s.rec.ID)
 	prevSt := m.reg.lastState(s.rec.ID)
+	fgTool, _ := m.reg.Bound(s.rec.ID)
 	m.reg.unwatch(s.rec.ID)
 	ctx := context.Background()
 	st := domain.StateDone
@@ -318,7 +319,7 @@ func (m *Manager) onExit(s *ptySession, code int) {
 	s.notifyState(StateUpdate{State: st, At: time.Now()})
 	m.events.Pub(Event{Type: "session.exited", SessionID: s.rec.ID, Session: s.Rec()})
 	// *→done|error is a catalog notify transition — agent.state carries it.
-	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, Process: fgName, State: st})
+	m.events.Pub(Event{Type: "agent.state", SessionID: s.rec.ID, Process: fgName, Tool: fgTool, State: st})
 	if st == domain.StateDone || st == domain.StateError {
 		m.alert(s.rec.ID, fgName, prevSt, st, "", "")
 	}

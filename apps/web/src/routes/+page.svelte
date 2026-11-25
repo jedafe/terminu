@@ -162,14 +162,14 @@
 	// on a pool tab to trade places (tab fills the frame, session goes
 	// to the pool). The handle follows the pointer while dragging.
 	function initDnd() {
-		let gx = 0,
-			gy = 0,
-			didDrag = false;
+		// Drag state lives on the dragged element — a second pointer
+		// starting mid-drag can't corrupt the first one's offset.
+		const pos = new WeakMap<Element, { x: number; y: number; moved: boolean }>();
 		// The highlighted target under the pointer is what a drop commits —
 		// hint and commit can never disagree, and nothing depends on
 		// dropzone event timing.
 		let hint: { kind: 'cell'; r: number; c: number } | { kind: 'tab'; pid: string } | null = null;
-		let dragPid: string | null = null;
+		let hintT = 0; // when the pointer last resolved a target
 		const clearHints = () =>
 			document
 				.querySelectorAll('.drop-hint')
@@ -182,12 +182,14 @@
 			if (cell?.dataset.cell) {
 				const [r, c] = cell.dataset.cell.split(':').map(Number);
 				hint = { kind: 'cell', r, c };
+				hintT = performance.now();
 				cell.classList.add('drop-hint', 'hint-assign');
 				return;
 			}
 			const tab = hit?.closest<HTMLElement>('.pane-tab');
 			if (tab?.dataset.pid) {
 				hint = { kind: 'tab', pid: tab.dataset.pid };
+				hintT = performance.now();
 				tab.classList.add('drop-hint', 'hint-swap');
 			}
 		};
@@ -200,36 +202,41 @@
 				manualStart: true,
 				listeners: {
 					start(ev) {
-						didDrag = false;
 						hint = null;
-						dragPid = (ev.target as HTMLElement).dataset.pid ?? null;
 						(ev.target as HTMLElement).classList.add('dnd-drag');
 						document.body.classList.add('dnd-live');
 					},
 					move(ev) {
-						gx += ev.dx;
-						gy += ev.dy;
 						const t = ev.target as HTMLElement;
-						t.style.transform = `translate(${gx}px, ${gy}px)`;
-						didDrag = true;
+						const p = pos.get(t);
+						if (p) {
+							p.x += ev.dx;
+							p.y += ev.dy;
+							p.moved = true;
+							t.style.transform = `translate(${p.x}px, ${p.y}px)`;
+						}
 						hintAt(ev.clientX, ev.clientY);
 					},
 					end(ev) {
 						const t = ev.target as HTMLElement;
+						const p = pos.get(t);
 						t.style.transform = '';
 						t.classList.remove('dnd-drag');
 						document.body.classList.remove('dnd-live');
-						// Re-resolve at release coords; if nothing resolves,
-						// keep the last move's hint as the drop target.
+						// Re-resolve at release coords. If nothing resolves,
+						// a *recent* last-move hint still counts; a stale one
+						// (pointer left it >200ms ago) is not a drop target.
 						const last = hint;
 						hintAt(ev.clientX, ev.clientY);
-						hint ??= last;
+						if (!hint && last && performance.now() - hintT < 200) hint = last;
 						clearHints();
-						if (!didDrag) return;
+						pos.delete(t);
+						if (!p?.moved) return;
 						// The synthetic click lands right after pointerup —
 						// suppress it, then reset for the next plain click.
 						justDragged = true;
 						setTimeout(() => (justDragged = false), 0);
+						const dragPid = t.dataset.pid;
 						if (!hint || !dragPid) return;
 						if (hint.kind === 'cell' && cellPos($grid, dragPid) !== `${hint.r}:${hint.c}`) {
 							assignCell(dragPid, hint.r, hint.c);
@@ -246,8 +253,7 @@
 				}
 			})
 			.on('down', (ev) => {
-				gx = 0;
-				gy = 0;
+				pos.set(ev.currentTarget, { x: 0, y: 0, moved: false });
 				ev.interaction.start({ name: 'drag' }, ev.interactable, ev.currentTarget);
 			});
 
@@ -1313,13 +1319,19 @@
 		background: transparent;
 	}
 	/* Frame grab handle — the only drag source; sits bottom-right
-	   clear of the search icon and the 12px scrollbar. */
+	   clear of the search icon and the 12px scrollbar. 44px box to
+	   match the touch-target convention; dimmed until hovered so it
+	   doesn't cover bottom-row TUI content louder than it needs to. */
 	.fgrab {
 		position: absolute;
-		bottom: 8px;
-		right: 18px;
+		bottom: 4px;
+		right: 12px;
 		z-index: 20;
-		padding: 8px 12px;
+		width: 44px;
+		height: 44px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		border-radius: 9px;
 		background: #11161fcc;
 		border: 1px solid #22304a;
@@ -1327,12 +1339,18 @@
 		font-size: 15px;
 		line-height: 1;
 		cursor: grab;
+		opacity: 0.45;
+		transition:
+			opacity 0.15s,
+			color 0.15s,
+			border-color 0.15s;
 		touch-action: none;
 		user-select: none;
 		-webkit-user-select: none;
 		-webkit-touch-callout: none;
 	}
 	.fgrab:hover {
+		opacity: 1;
 		color: #4cc9f0;
 		border-color: #4cc9f0;
 	}

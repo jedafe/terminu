@@ -388,6 +388,7 @@ export function wireEvents() {
 				kind?: string;
 				confidence?: string;
 				process?: string;
+				tool?: string;
 			};
 			agentStates.update((m) => {
 				const prev = m[ev.session_id] ?? {};
@@ -400,6 +401,9 @@ export function wireEvents() {
 						kind: ev.kind,
 						confidence: ev.confidence,
 						process: ev.process,
+						// tool rebinds server-side per fg — the event's copy
+						// is always fresh; absent = no curated adapter bound.
+						tool: ev.tool,
 						// fresh transition with no server since → now, not oldest
 						since: changed ? new Date().toISOString() : prev.since
 					}
