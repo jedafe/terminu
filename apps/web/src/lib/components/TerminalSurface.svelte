@@ -119,6 +119,13 @@
 				/* canvas fallback is fine */
 			});
 
+		// Color-report queries (OSC 4/5/10/11/12 '?') get no answer —
+		// xterm's reply goes to the PTY as input, and TUIs that re-query
+		// on resize/reattach paste it mid-redraw. Returning true marks
+		// the sequence consumed; set-forms fall through to xterm.
+		for (const id of [4, 5, 10, 11, 12])
+			term.parser.registerOscHandler(id, (data: string) => data.includes('?'));
+
 		// OSC 52 → system clipboard (the bridge that makes remote copy work).
 		term.parser.registerOscHandler(52, (data: string) => {
 			const payload = data.split(';').pop() ?? '';
