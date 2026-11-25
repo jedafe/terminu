@@ -33,6 +33,7 @@ type binding struct {
 	ad      adapter.Adapter // nil → unadapted (generic tiers run)
 	fg      proc.Info
 	lastKey string      // dedup key of last emitted match
+	lastFG  string      // last fg name emitted — fg moves emit without a state change
 	lastUp  StateUpdate // last emitted transition — session sockets resync from it
 	// Alert re-arm state: a waiting alert is persisted once per wait
 	// episode. Flapping working↔waiting during a redraw can't respawn
@@ -128,32 +129,44 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 	}
 	key := string(st) + "|" + string(kind) + "|" + string(confidence) + "|" + evidence
 	b.mu.Lock()
-	if key == b.lastKey {
+	prev := b.lastUp.State
+	stateChanged := key != b.lastKey
+	fgChanged := fg.Name() != b.lastFG
+	if !stateChanged && !fgChanged {
 		b.mu.Unlock()
 		return // nothing changed — no write, no emit
 	}
-	prev := b.lastUp.State
-	b.lastKey = key
-	b.lastUp = StateUpdate{State: st, Match: m, At: time.Now()}
+	if stateChanged {
+		b.lastKey = key
+		b.lastUp = StateUpdate{State: st, Match: m, At: time.Now()}
+	}
+	b.lastFG = fg.Name()
 	b.mu.Unlock()
 
-	_ = r.m.setState(context.Background(), s.rec.ID, st, string(kind), string(confidence), evidence)
-	s.setRecState(st)
-	s.notifyState(b.lastUp)
+	if stateChanged {
+		_ = r.m.setState(context.Background(), s.rec.ID, st, string(kind), string(confidence), evidence)
+		s.setRecState(st)
+		s.notifyState(b.lastUp)
+	}
 
-	// Catalog transition rule: notify on *detected* states — agent.state
-	// feeds the needs-you view (kind only rides waiting-for-input).
-	// `alert` rows persist only the EDGE (prev != st): a repeat detect of
-	// the same wait is not a transition (§05).
+	// agent.state carries the fg name + detected state — emit whenever
+	// either changes so clients mirror the Agents() view live (tab
+	// labels read Process; needs-you reads State). `alert` rows persist
+	// only the EDGE (prev != st): a repeat detect of the same wait is
+	// not a transition (§05).
+	r.m.events.Pub(Event{
+		Type:       "agent.state",
+		SessionID:  s.rec.ID,
+		Process:    fg.Name(),
+		State:      st,
+		Kind:       kind,
+		Confidence: confidence,
+	})
+
+	if !stateChanged {
+		return // pure fg move — alerts track state edges only
+	}
 	if st == domain.StateWaitingForInput || st == domain.StateDone || st == domain.StateError {
-		r.m.events.Pub(Event{
-			Type:       "agent.state",
-			SessionID:  s.rec.ID,
-			Process:    fg.Name(),
-			State:      st,
-			Kind:       kind,
-			Confidence: confidence,
-		})
 		// A low-confidence wait is a guess — the UI hints "may be
 		// waiting" only; persisting it as an alert would promote a
 		// guess into a row (AGENTS.md: never promote a low-conf wait).

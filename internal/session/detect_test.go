@@ -112,7 +112,7 @@ func TestRegistryPipeline(t *testing.T) {
 				continue
 			}
 			if e.State != domain.StateWaitingForInput {
-				t.Fatalf("state = %s, want waiting-for-input", e.State)
+				continue // fg-only emits ride agent.state too — wait for the transition
 			}
 			if e.Kind != domain.WaitConfirm || e.Confidence != domain.ConfidenceMedium {
 				t.Fatalf("kind=%s conf=%s", e.Kind, e.Confidence)

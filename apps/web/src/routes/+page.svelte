@@ -31,6 +31,7 @@
 		sizeCellPair,
 		sizeRowPair
 	} from '$lib/stores';
+	import type { Pane } from '$lib/stores';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
 	import InputLine from '$lib/components/InputLine.svelte';
@@ -496,6 +497,17 @@
 		return s.name || s.shell.split('/').pop() || s.id;
 	}
 
+	// Tab auto-name: an explicit name always wins; otherwise show the
+	// app actually running — curated tool name when an adapter matched,
+	// else the live foreground process; shell basename as the floor.
+	function tabLabel(p: Pane): string {
+		const s = sessionOf(p.sessionId);
+		if (!s) return '?';
+		if (s.name) return s.name;
+		const a = $agentStates[p.sessionId];
+		return a?.tool || a?.process || s.shell.split('/').pop() || s.id;
+	}
+
 	function sessionOf(id: string): Session | undefined {
 		return $sessions.find((s) => s.id === id);
 	}
@@ -548,7 +560,7 @@
 					onkeydown={() => activePane.set(p.id)}
 				>
 					{#if needsYouId(p.sessionId)}<span class="tabdot needs"></span>{/if}
-					{label(sessionOf(p.sessionId))}
+					{tabLabel(p)}
 					<button
 						class="tabx"
 						aria-label="close tab"
@@ -744,7 +756,7 @@
 											scheduleSave();
 										}}
 									>
-										<span class="plabel">{label(sessionOf(pp.sessionId))}</span>
+										<span class="plabel">{tabLabel(pp)}</span>
 										<span class="pwhere">{cellPos($grid, pp.id) ?? 'pool'}</span>
 									</button>
 								{/each}
