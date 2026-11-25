@@ -593,6 +593,7 @@
 		display: flex;
 		gap: 4px;
 		overflow-x: auto;
+		overflow-x: overlay; /* float over tabs where supported — no gutter band */
 		scrollbar-width: auto;
 		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 	}

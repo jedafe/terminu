@@ -510,6 +510,7 @@
 	/* xterm viewport scrollbar: keep a minimal floating thumb for
 	   position feedback — no track background over the terminal. */
 	.tsurface :global(.xterm-viewport) {
+		overflow-y: overlay; /* float over content where supported — no gutter */
 		scrollbar-width: auto;
 		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 	}
@@ -683,7 +684,7 @@
 		position: absolute;
 		z-index: 1;
 		top: 6px;
-		right: 6px;
+		right: 20px; /* clear of the 12px viewport scrollbar */
 		display: flex;
 		gap: 6px;
 		align-items: center;
