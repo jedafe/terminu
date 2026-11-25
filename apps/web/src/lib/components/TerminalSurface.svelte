@@ -38,6 +38,54 @@
 	let maybeWaiting = $state(false);
 	let freeReply = $state('');
 
+	// Custom scroll thumb — the native viewport scrollbar paints under the
+	// .xterm-screen canvas on every UA (canvas is a positioned sibling), so
+	// we hide it and render our own track/thumb above the canvas.
+	let vpEl: HTMLElement | null = null;
+	let vshow = $state(false);
+	let vtop = $state(0);
+	let vheight = $state(0);
+
+	function updateThumb() {
+		const b = term?.buffer.active;
+		if (!b || !vpEl) return;
+		const total = b.length;
+		const vis = term.rows;
+		if (total <= vis) {
+			vshow = false;
+			return;
+		}
+		const track = vpEl.clientHeight;
+		const h = Math.max(24, (track * vis) / total);
+		const frac = b.viewportY / (total - vis);
+		vheight = h;
+		vtop = Math.min(track - h, Math.max(0, frac * (track - h)));
+		vshow = true;
+	}
+
+	function vPointerDown(e: PointerEvent) {
+		const track = e.currentTarget as HTMLElement;
+		e.preventDefault();
+		e.stopPropagation();
+		track.setPointerCapture(e.pointerId);
+		const jump = (ev: PointerEvent) => {
+			const r = track.getBoundingClientRect();
+			if (!vpEl) return;
+			const frac = Math.min(1, Math.max(0, (ev.clientY - r.top - vheight / 2) / (r.height - vheight)));
+			vpEl.scrollTop = frac * (vpEl.scrollHeight - vpEl.clientHeight);
+		};
+		jump(e);
+		const move = (ev: PointerEvent) => jump(ev);
+		const end = () => {
+			track.removeEventListener('pointermove', move);
+			track.removeEventListener('pointerup', end);
+			track.removeEventListener('pointercancel', end);
+		};
+		track.addEventListener('pointermove', move);
+		track.addEventListener('pointerup', end);
+		track.addEventListener('pointercancel', end);
+	}
+
 	onMount(() => {
 		term = new Terminal({
 			fontFamily: 'ui-monospace, "JetBrains Mono", Menlo, monospace',
@@ -84,6 +132,11 @@
 
 		// Physical keys and key-bar bytes share one input path.
 		term.onData((d) => client?.send(d));
+
+		// Scroll thumb follows buffer growth and viewport position.
+		vpEl = el.querySelector('.xterm-viewport');
+		term.onScroll(() => updateThumb());
+		term.onRender(() => updateThumb());
 
 		client = new SessionClient(sessionId, {
 			data: (p) => term.write(p),
@@ -337,6 +390,7 @@
 		try {
 			fit?.fit();
 			if (term?.cols && term?.rows) client?.resize(term.cols, term.rows);
+			updateThumb();
 		} catch {
 			/* hidden pane — fit on next show */
 		}
@@ -390,6 +444,20 @@
 
 <div class="tsurface" class:inactive={!active} class:select-mode={$touchMode === 'select'}>
 	<div bind:this={el} class="term"></div>
+
+	{#if vshow}
+		<!-- svelte-ignore a11y_no_static_element_interactions — scrollbar chrome -->
+		<div
+			class="vscroll"
+			onpointerdown={vPointerDown}
+			oncontextmenu={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+			}}
+		>
+			<div class="vthumb" style:top="{vtop}px" style:height="{vheight}px"></div>
+		</div>
+	{/if}
 
 	{#if status === 'reconnecting'}
 		<div class="banner">reconnecting…</div>
@@ -507,30 +575,32 @@
 		-webkit-user-select: text;
 		user-select: text;
 	}
-	/* xterm viewport scrollbar: keep a minimal floating thumb for
-	   position feedback — no track background over the terminal. */
+	/* The native viewport scrollbar paints under the .xterm-screen canvas —
+	   hide it; .vscroll renders the thumb above the canvas instead. */
 	.tsurface :global(.xterm-viewport) {
-		overflow-y: overlay; /* float over content where supported — no gutter */
-		/* Classic-scrollbar UAs: reserve the gutter permanently so the
-		   screen canvas never overlaps the thumb (border-box RO can't
-		   see content-box changes). */
-		scrollbar-gutter: stable;
-		scrollbar-width: auto;
-		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+		scrollbar-width: none;
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar) {
+		display: none;
+	}
+	.vscroll {
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
 		width: 12px;
-		background: transparent;
+		z-index: 4;
+		touch-action: none;
 	}
-	.tsurface :global(.xterm-viewport::-webkit-scrollbar-thumb) {
-		background: rgba(255, 255, 255, 0.3);
+	.vthumb {
+		position: absolute;
+		left: 2px;
+		right: 2px;
 		border-radius: 4px;
+		background: rgba(255, 255, 255, 0.3);
 	}
-	.tsurface :global(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+	.vthumb:hover {
 		background: rgba(255, 255, 255, 0.45);
-	}
-	.tsurface :global(.xterm-viewport::-webkit-scrollbar-track) {
-		background: transparent;
 	}
 	.ctxshade {
 		position: fixed;
