@@ -68,13 +68,31 @@ export async function refreshAgents() {
 	agentStates.set(m);
 }
 
-// Pane layout — each pane is a view onto one session id.
+// Pane layout — each pane is a view onto one session id. The pool is
+// every open tab; the grid is a fixed preset of slots that panes are
+// assigned into. Slot weights (cell.size = width share, row.size =
+// height share) belong to the slot, not the pane — swap a tab in and
+// the window keeps its proportions.
 export interface Pane {
 	id: string; // pane id
 	sessionId: string;
-	size?: number; // relative flex weight (default 1) — persisted in layout
+}
+export interface GridCell {
+	paneId?: string;
+	size?: number;
+}
+export interface GridRow {
+	cells: GridCell[];
+	size?: number;
 }
 export const panes = writable<Pane[]>([]);
+export const grid = writable<GridRow[]>([{ cells: [{}], size: 1 }]);
+// Which panes currently occupy a slot — drives the tab-strip marker.
+export const onGrid = derived(grid, (g) => {
+	const s = new Set<string>();
+	g.forEach((row) => row.cells.forEach((c) => c.paneId && s.add(c.paneId)));
+	return s;
+});
 export const activePane = writable<string | null>(null);
 export const workspaces = writable<Workspace[]>([]);
 export const activeWorkspace = writable<number>(1);
@@ -131,19 +149,34 @@ let paneSeq = 0;
 export function newPane(sessionId: string) {
 	const p: Pane = { id: `p${++paneSeq}`, sessionId };
 	panes.update((ps) => [...ps, p]);
+	// Fill the first empty grid slot, if any — pool order decides which
+	// waiting tab lands there.
+	grid.update((rows) => {
+		for (const row of rows)
+			for (const c of row.cells)
+				if (!c.paneId) {
+					c.paneId = p.id;
+					return rows;
+				}
+		return rows;
+	});
 	activePane.set(p.id);
 	return p;
 }
 
 export function closePane(id: string) {
 	panes.update((ps) => ps.filter((p) => p.id !== id));
+	grid.update((rows) => {
+		for (const row of rows)
+			for (const c of row.cells) if (c.paneId === id) c.paneId = undefined;
+		return rows;
+	});
 	const ps = get(panes);
 	if (get(activePane) === id) activePane.set(ps[ps.length - 1]?.id ?? null);
 }
 
-// movePane reorders a pane to a new index; swapPanes exchanges two
-// positions in place — both drive the grid order and persist via
-// the caller's saveWorkspace.
+// movePane reorders a pane's pool position (tab order); grid slots keep
+// their occupants — assignment changes go through assignCell.
 export function movePane(id: string, toIndex: number) {
 	panes.update((ps) => {
 		const from = ps.findIndex((p) => p.id === id);
@@ -155,6 +188,9 @@ export function movePane(id: string, toIndex: number) {
 	});
 }
 
+// swapPanes exchanges two panes' positions — pool order always swaps;
+// when both are on the grid their slots swap occupants too, so a
+// strip-level swap of two visible panes exchanges their windows.
 export function swapPanes(a: string, b: string) {
 	panes.update((ps) => {
 		const ia = ps.findIndex((p) => p.id === a);
@@ -164,22 +200,89 @@ export function swapPanes(a: string, b: string) {
 		[next[ia], next[ib]] = [next[ib], next[ia]];
 		return next;
 	});
+	grid.update((rows) => {
+		const pa = cellOf(rows, a);
+		const pb = cellOf(rows, b);
+		if (pa && pb) {
+			rows[pa.r].cells[pa.c].paneId = b;
+			rows[pb.r].cells[pb.c].paneId = a;
+		}
+		return rows;
+	});
 }
 
-// sizePair sets two adjacent panes' sizes so they sum to their current
-// total — divider drags redistribute, never grow the strip.
-export function sizePair(a: string, b: string, sizeA: number) {
-	panes.update((ps) => {
-		const ia = ps.findIndex((p) => p.id === a);
-		const ib = ps.findIndex((p) => p.id === b);
-		if (ia < 0 || ib < 0 || ib !== ia + 1) return ps;
-		const total = (ps[ia].size ?? 1) + (ps[ib].size ?? 1);
-		const min = total * 0.15;
-		const a2 = Math.min(total - min, Math.max(min, sizeA));
-		const next = [...ps];
-		next[ia] = { ...next[ia], size: a2 };
-		next[ib] = { ...next[ib], size: total - a2 };
-		return next;
+// assignCell puts a pane into grid slot (r, c). On-grid panes swap
+// slots; pool panes displace the occupant back to the pool — the
+// preset's shape never changes, only who sits where.
+export function assignCell(paneId: string, r: number, c: number) {
+	grid.update((rows) => {
+		if (!rows[r]?.cells[c]) return rows;
+		const src = cellOf(rows, paneId);
+		if (src && (src.r !== r || src.c !== c)) {
+			rows[src.r].cells[src.c].paneId = rows[r].cells[c].paneId;
+		}
+		rows[r].cells[c].paneId = paneId;
+		return rows;
+	});
+}
+
+// cellOf locates the slot a pane occupies, or null when it's pool-only.
+function cellOf(rows: GridRow[], paneId: string): { r: number; c: number } | null {
+	for (let r = 0; r < rows.length; r++)
+		for (let c = 0; c < rows[r].cells.length; c++)
+			if (rows[r].cells[c].paneId === paneId) return { r, c };
+	return null;
+}
+
+// pairClamp splits two adjacent weights at `want` for the first —
+// total preserved, each side floored at 15%.
+function pairClamp(total: number, want: number): [number, number] {
+	const min = total * 0.15;
+	const a = Math.min(total - min, Math.max(min, want));
+	return [a, total - a];
+}
+
+export function sizeCellPair(r: number, c1: number, c2: number, sizeA: number) {
+	grid.update((rows) => {
+		const row = rows[r];
+		if (!row || c2 !== c1 + 1 || !row.cells[c1] || !row.cells[c2]) return rows;
+		const [a, b] = pairClamp((row.cells[c1].size ?? 1) + (row.cells[c2].size ?? 1), sizeA);
+		row.cells[c1] = { ...row.cells[c1], size: a };
+		row.cells[c2] = { ...row.cells[c2], size: b };
+		return rows;
+	});
+}
+
+export function sizeRowPair(r1: number, r2: number, sizeA: number) {
+	grid.update((rows) => {
+		if (r2 !== r1 + 1 || !rows[r1] || !rows[r2]) return rows;
+		const [a, b] = pairClamp((rows[r1].size ?? 1) + (rows[r2].size ?? 1), sizeA);
+		rows[r1] = { ...rows[r1], size: a };
+		rows[r2] = { ...rows[r2], size: b };
+		return rows;
+	});
+}
+
+// applyPreset rebuilds the grid as rows of `shape` cell-counts (max 4
+// cells). Existing slots keep their occupants row-major where they
+// fit; overflow panes return to the pool; remaining empty cells are
+// filled with unassigned pool panes in tab order.
+export function applyPreset(shape: number[]) {
+	const counts = shape.map((n) => Math.max(1, Math.min(4, n | 0))).slice(0, 4);
+	if (!counts.length) return;
+	grid.update((old) => {
+		const carried: (string | undefined)[] = [];
+		old.forEach((row) => row.cells.forEach((c) => carried.push(c.paneId)));
+		const pool = get(panes)
+			.map((p) => p.id)
+			.filter((id) => !carried.includes(id));
+		return counts.map((n) => ({
+			size: 1,
+			cells: Array.from({ length: n }, () => ({
+				size: 1,
+				paneId: carried.shift() ?? pool.shift()
+			}))
+		}));
 	});
 }
 
@@ -195,6 +298,7 @@ export async function loadWorkspaces() {
 export async function saveWorkspace() {
 	const layout = JSON.stringify({
 		panes: get(panes),
+		grid: get(grid),
 		active: get(activePane)
 	});
 	await api.putWorkspace(get(activeWorkspace), {
@@ -210,7 +314,11 @@ export async function restoreWorkspace() {
 	const ws = list.find((w) => w.id === get(activeWorkspace));
 	if (!ws) return;
 	try {
-		const layout = JSON.parse(ws.layout || '{}') as { panes?: Pane[]; active?: string };
+		const layout = JSON.parse(ws.layout || '{}') as {
+			panes?: (Pane & { size?: number })[];
+			grid?: GridRow[];
+			active?: string;
+		};
 		const live = new Set(get(sessions).map((s) => s.id));
 		const seen = new Set<string>();
 		const restored = (layout.panes ?? []).filter(
@@ -223,6 +331,24 @@ export async function restoreWorkspace() {
 			// the next newPane re-mints a live id (each_key_duplicate).
 			paneSeq = restored.reduce((m, p) => Math.max(m, parseInt(p.id.slice(1), 10) || 0), 0);
 			activePane.set(layout.active ?? restored[0].id);
+			// Grid: validate saved slots; migrate pre-grid layouts (flat
+			// pane list with `size`) into a single side-by-side row.
+			const ids = new Set(restored.map((p) => p.id));
+			const valid =
+				Array.isArray(layout.grid) &&
+				layout.grid.length > 0 &&
+				layout.grid.every((r) => Array.isArray(r?.cells) && r.cells.length > 0);
+			grid.set(
+				valid
+					? layout.grid!.map((r) => ({
+							size: typeof r.size === 'number' && r.size > 0 ? r.size : 1,
+							cells: r.cells.map((c) => ({
+								paneId: c?.paneId && ids.has(c.paneId) ? c.paneId : undefined,
+								size: typeof c?.size === 'number' && c.size > 0 ? c.size : 1
+							}))
+						}))
+					: [{ size: 1, cells: restored.map((p) => ({ paneId: p.id, size: p.size ?? 1 })) }]
+			);
 		}
 	} catch {
 		/* corrupt layout — start fresh */

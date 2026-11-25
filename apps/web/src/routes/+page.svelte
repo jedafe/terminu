@@ -24,7 +24,12 @@
 		ackAlert,
 		movePane,
 		swapPanes,
-		sizePair
+		grid,
+		onGrid,
+		assignCell,
+		applyPreset,
+		sizeCellPair,
+		sizeRowPair
 	} from '$lib/stores';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
@@ -60,13 +65,33 @@
 	let ptrBusy = $state(false);
 	let shellEl: HTMLDivElement;
 
+	// Layout presets — the grid is a fixed arrangement of slots (≤4);
+	// pool tabs swap in/out of slots without changing the shape.
+	const PRESETS: { name: string; shape: number[] }[] = [
+		{ name: '1', shape: [1] },
+		{ name: '1 | 1', shape: [2] },
+		{ name: '1 ⁄ 1', shape: [1, 1] },
+		{ name: '1 ⁄ 2', shape: [1, 2] },
+		{ name: '2 ⁄ 1', shape: [2, 1] },
+		{ name: '2 × 2', shape: [2, 2] },
+		{ name: '3', shape: [3] },
+		{ name: '1 ⁄ 3', shape: [1, 3] },
+		{ name: '3 ⁄ 1', shape: [3, 1] },
+		{ name: '4', shape: [4] },
+		{ name: '1 ⁄ 1 ⁄ 1', shape: [1, 1, 1] }
+	];
+
 	// Pane resize + reorder: dividers redistribute a pair's weight,
-	// tab drags move/swap positions. Both persist via scheduleSave.
+	// tab drags swap panes into grid slots. Both persist via scheduleSave.
+	let cellCount = $derived($grid.reduce((n, r) => n + r.cells.length, 0));
 	let gridEl: HTMLElement;
-	let paneEls: (HTMLElement | undefined)[] = [];
+	let rowEls: (HTMLElement | undefined)[] = [];
 	let justDragged = false;
 
-	function divDown(e: PointerEvent, i: number) {
+	// Generic pair drag: `cells` are the two elements sharing an axis;
+	// `apply` writes the first element's new weight. Tap = cycle
+	// 1/1 → 2/1 → 1/2.
+	function pairDrag(e: PointerEvent, cells: [HTMLElement, HTMLElement], horiz: boolean, sizeA: number, sizeB: number, apply: (a: number) => void) {
 		if (e.button !== 0) return;
 		e.preventDefault();
 		const d = e.currentTarget as HTMLElement;
@@ -75,36 +100,55 @@
 		} catch {
 			// synthetic/stale pointer — capture is a nicety, not a requirement
 		}
-		const horiz = getComputedStyle(gridEl).flexDirection === 'row';
-		const a = $panes[i - 1];
-		const b = $panes[i];
-		const ra = paneEls[i - 1]!.getBoundingClientRect();
-		const rb = paneEls[i]!.getBoundingClientRect();
-		const pairPx = horiz ? ra.width + rb.width : ra.height + rb.height;
+		const ra = cells[0].getBoundingClientRect();
+		const rb = cells[1].getBoundingClientRect();
+		const pairPx = (horiz ? ra.width + rb.width : ra.height + rb.height) || 1;
 		const start = horiz ? ra.left : ra.top;
-		const total = (a.size ?? 1) + (b.size ?? 1);
+		const total = sizeA + sizeB;
 		let moved = false;
 		const move = (ev: PointerEvent) => {
-			const pos = (horiz ? ev.clientX : ev.clientY) - start;
-			const size = (pos / pairPx) * total;
-			if (!moved && Math.abs(size - (a.size ?? 1)) > total * 0.02) moved = true;
-			if (moved) sizePair(a.id, b.id, size);
+			const size = (((horiz ? ev.clientX : ev.clientY) - start) / pairPx) * total;
+			if (!moved && Math.abs(size - sizeA) > total * 0.02) moved = true;
+			if (moved) apply(size);
 		};
 		const up = () => {
 			d.removeEventListener('pointermove', move);
 			d.removeEventListener('pointerup', up);
 			d.removeEventListener('pointercancel', up);
 			if (!moved) {
-				// click (no drag): cycle the pair through 1/1 → 2/1 → 1/2
-				const ratio = (a.size ?? 1) / total;
-				const next = ratio > 0.6 ? 1 / 3 : ratio > 0.4 ? 2 / 3 : 0.5;
-				sizePair(a.id, b.id, total * next);
+				const ratio = sizeA / total;
+				apply(total * (ratio > 0.6 ? 1 / 3 : ratio > 0.4 ? 2 / 3 : 0.5));
 			}
 			scheduleSave();
 		};
 		d.addEventListener('pointermove', move);
 		d.addEventListener('pointerup', up);
 		d.addEventListener('pointercancel', up);
+	}
+
+	// Divider between two cells in the same row.
+	function divDown(e: PointerEvent, r: number, c: number) {
+		const row = rowEls[r];
+		if (!row) return;
+		const cells = [...row.querySelectorAll<HTMLElement>(':scope > .pane')];
+		const a = cells[c - 1];
+		const b = cells[c];
+		if (!a || !b) return;
+		const horiz = getComputedStyle(row).flexDirection === 'row';
+		const row_ = $grid[r];
+		pairDrag(e, [a, b], horiz, row_.cells[c - 1].size ?? 1, row_.cells[c].size ?? 1, (s) =>
+			sizeCellPair(r, c - 1, c, s)
+		);
+	}
+
+	// Divider between two rows — always a vertical split.
+	function rowDivDown(e: PointerEvent, r: number) {
+		const a = rowEls[r - 1];
+		const b = rowEls[r];
+		if (!a || !b) return;
+		pairDrag(e, [a, b], false, $grid[r - 1].size ?? 1, $grid[r].size ?? 1, (s) =>
+			sizeRowPair(r - 1, r, s)
+		);
 	}
 
 	function tabDown(e: PointerEvent, id: string) {
@@ -118,7 +162,9 @@
 		let armed = e.pointerType !== 'touch';
 		const armTimer = armed ? 0 : setTimeout(() => (armed = true), 350);
 		const clearHints = () =>
-			document.querySelectorAll('.pane-tab.drop-hint').forEach((t) => t.classList.remove('drop-hint', 'hint-before', 'hint-after', 'hint-swap'));
+			document
+				.querySelectorAll('.drop-hint')
+				.forEach((t) => t.classList.remove('drop-hint', 'hint-before', 'hint-after', 'hint-swap', 'hint-assign'));
 		const cleanup = () => {
 			clearTimeout(armTimer);
 			window.removeEventListener('pointermove', move);
@@ -145,7 +191,13 @@
 				tab.classList.add('dragging');
 			}
 			clearHints();
-			const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.pane-tab');
+			const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+			const cell = hit?.closest<HTMLElement>('.pane[data-cell]');
+			if (cell) {
+				cell.classList.add('drop-hint', 'hint-assign');
+				return;
+			}
+			const el = hit?.closest<HTMLElement>('.pane-tab');
 			if (el && el !== tab) {
 				const r = el.getBoundingClientRect();
 				const f = (ev.clientX - r.left) / r.width;
@@ -159,16 +211,24 @@
 			// during a drag, then reset for the next plain click.
 			setTimeout(() => (justDragged = false), 0);
 			if (dragging) {
-				const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.pane-tab');
-				const pid = (el as HTMLElement | null)?.dataset.pid;
-				if (el && el !== tab && pid) {
-					const r = el.getBoundingClientRect();
-					const f = (ev.clientX - r.left) / r.width;
-					const toIdx = $panes.findIndex((x) => x.id === pid);
-					if (f < 0.33) movePane(id, toIdx);
-					else if (f > 0.67) movePane(id, toIdx + 1);
-					else swapPanes(id, pid);
+				const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+				const cell = hit?.closest<HTMLElement>('.pane[data-cell]');
+				if (cell?.dataset.cell) {
+					const [r, c] = cell.dataset.cell.split(':').map(Number);
+					assignCell(id, r, c);
 					scheduleSave();
+				} else {
+					const el = hit?.closest<HTMLElement>('.pane-tab');
+					const pid = el?.dataset.pid;
+					if (el && el !== tab && pid) {
+						const r = el.getBoundingClientRect();
+						const f = (ev.clientX - r.left) / r.width;
+						const toIdx = $panes.findIndex((x) => x.id === pid);
+						if (f < 0.33) movePane(id, toIdx);
+						else if (f > 0.67) movePane(id, toIdx + 1);
+						else swapPanes(id, pid);
+						scheduleSave();
+					}
 				}
 			}
 			clearHints();
@@ -441,6 +501,7 @@
 				<div
 					class="pane-tab"
 					class:active={$activePane === p.id}
+					class:ongrid={$onGrid.has(p.id)}
 					data-pid={p.id}
 					role="button"
 					tabindex="0"
@@ -502,6 +563,24 @@
 				<button class="tb" onclick={toggleShellPick}>+ new</button>
 			</div>
 
+			<div class="ghead"><span>layout</span></div>
+			<div class="presets">
+				{#each PRESETS as pre (pre.name)}
+					{@const cur = $grid.map((r) => r.cells.length).join(',') === pre.shape.join(',')}
+					<button
+						class="preset"
+						class:cur
+						title={pre.name}
+						onclick={() => { applyPreset(pre.shape); scheduleSave(); }}
+					>
+						<span class="pg">
+							{#each pre.shape as n}<span class="pgrow">{#each Array(n) as _}<i></i>{/each}</span>{/each}
+						</span>
+						<span class="pname">{pre.name}</span>
+					</button>
+				{/each}
+			</div>
+
 			{#if unacked.length > 0}
 				<div class="ghead"><span>alerts</span></div>
 				{#each unacked as a (a.id)}
@@ -546,43 +625,60 @@
 		</div>
 	{/if}
 
-	<!-- terminal grid: flex row (desktop) / column (mobile), panes carry
-	     relative size weights; dividers redistribute the pair's total. -->
-	<main class="grid" class:single={$panes.length <= 1} bind:this={gridEl}>
-		{#each $panes as p, i (p.id)}
-			{#if i > 0}
+	<!-- terminal grid: preset-shaped rows of slots. Each slot holds one
+	     pane from the pool (or waits for a tab drop); slot/row weights
+	     belong to the slot, so swapping occupants keeps proportions. -->
+	<main class="grid" class:single={cellCount <= 1} bind:this={gridEl}>
+		{#each $grid as row, ri}
+			{#if ri > 0}
 				<!-- svelte-ignore a11y_no_static_element_interactions — splitter -->
-				<div class="divider" onpointerdown={(e) => divDown(e, i)}></div>
+				<div class="divider rowdiv" onpointerdown={(e) => rowDivDown(e, ri)}></div>
 			{/if}
-			<section
-				class="pane"
-				bind:this={paneEls[i]}
-				style:flex="{p.size ?? 1} 1 0"
-				class:focused={$activePane === p.id}
-				role="button"
-				tabindex="0"
-				onclick={() => activePane.set(p.id)}
-				onkeydown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') activePane.set(p.id);
-				}}
-			>
-				{#if $panes.length > 1}
-					<div class="ptitle">
-						{label(sessionOf(p.sessionId))}
-						<button class="pclose" onclick={(e) => { e.stopPropagation(); closePane(p.id); scheduleSave(); }}>✕</button>
-					</div>
-				{/if}
-				<div class="pterm">
-					<TerminalSurface
-						bind:this={surfaces[p.id]}
-						sessionId={p.sessionId}
-						active={$activePane === p.id}
-						onrequestinput={() => (kbdOpen = true)}
-						onpull={termPull}
-						onpullrelease={termPullEnd}
-					/>
-				</div>
-			</section>
+			<div class="grow" bind:this={rowEls[ri]} style:flex="{row.size ?? 1} 1 0">
+				{#each row.cells as cell, ci}
+					{#if ci > 0}
+						<!-- svelte-ignore a11y_no_static_element_interactions — splitter -->
+						<div class="divider" onpointerdown={(e) => divDown(e, ri, ci)}></div>
+					{/if}
+					{@const p = cell.paneId ? $panes.find((x) => x.id === cell.paneId) : undefined}
+					<section
+						class="pane"
+						class:empty={!p}
+						data-cell="{ri}:{ci}"
+						style:flex="{cell.size ?? 1} 1 0"
+						class:focused={p && $activePane === p.id}
+						role="button"
+						tabindex="0"
+						onclick={() => p && activePane.set(p.id)}
+						onkeydown={(e) => {
+							if (p && (e.key === 'Enter' || e.key === ' ')) activePane.set(p.id);
+						}}
+					>
+						{#if p}
+							{#if cellCount > 1}
+								<div class="ptitle">
+									{label(sessionOf(p.sessionId))}
+									<button class="pclose" onclick={(e) => { e.stopPropagation(); closePane(p.id); scheduleSave(); }}>✕</button>
+								</div>
+							{/if}
+							<div class="pterm">
+								{#key cell.paneId}
+									<TerminalSurface
+										bind:this={surfaces[p.id]}
+										sessionId={p.sessionId}
+										active={$activePane === p.id}
+										onrequestinput={() => (kbdOpen = true)}
+										onpull={termPull}
+										onpullrelease={termPullEnd}
+									/>
+								{/key}
+							</div>
+						{:else}
+							<div class="pempty">drop a tab here</div>
+						{/if}
+					</section>
+				{/each}
+			</div>
 		{/each}
 		{#if $panes.length === 0}
 			<div class="empty-main">
@@ -764,6 +860,10 @@
 		border-color: #4cc9f0;
 		color: #e6f2ff;
 	}
+	/* On-grid marker — tabs occupying a window slot get a left edge. */
+	.pane-tab.ongrid {
+		box-shadow: inset 3px 0 0 #3d5a80;
+	}
 	.tabx {
 		border: 0;
 		background: transparent;
@@ -901,6 +1001,51 @@
 		font: 10px ui-monospace, monospace;
 		letter-spacing: 0.18em;
 	}
+	/* layout preset menu — mini grid glyph + name, current shape lit */
+	.presets {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		padding: 4px 10px 6px;
+	}
+	.preset {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		border: 1px solid #1c2634;
+		border-radius: 8px;
+		background: #0d1117;
+		color: #6b7f9e;
+		padding: 6px 9px;
+		font: 10px ui-monospace, monospace;
+		min-height: 40px;
+	}
+	.preset.cur {
+		border-color: #4cc9f0;
+		color: #e6f2ff;
+	}
+	.preset:active {
+		background: #1c2a44;
+	}
+	/* glyph: rows of mini cells mirroring the shape */
+	.pg {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		width: 26px;
+	}
+	.pgrow {
+		display: flex;
+		gap: 2px;
+		flex: 1;
+	}
+	.pgrow i {
+		flex: 1;
+		height: 9px;
+		background: currentColor;
+		opacity: 0.55;
+		border-radius: 1px;
+	}
 	.clearall {
 		border: 0;
 		background: transparent;
@@ -961,6 +1106,9 @@
 		color: #33415c;
 		font: 13px ui-monospace, monospace;
 	}
+	/* Grid = column of rows (preset shape). Cells split horizontally on
+	   desktop, stack vertically on small screens; row splits stay
+	   vertical on every screen. */
 	.grid {
 		flex: 1;
 		display: flex;
@@ -969,8 +1117,15 @@
 		min-height: 0;
 		background: #06090d;
 	}
+	.grow {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-height: 0;
+		min-width: 0;
+	}
 	@media (min-width: 900px) {
-		.grid {
+		.grow {
 			flex-direction: row;
 		}
 	}
@@ -994,6 +1149,13 @@
 			cursor: row-resize;
 		}
 	}
+	/* Between rows the split is always vertical, at every width. */
+	.rowdiv {
+		height: 8px;
+		width: auto;
+		margin: -4px 0;
+		cursor: row-resize;
+	}
 	.divider:hover {
 		background: #22304a;
 	}
@@ -1009,6 +1171,10 @@
 	:global(.pane-tab.hint-after) {
 		box-shadow: inset -3px 0 0 #4cc9f0;
 	}
+	:global(.pane.hint-assign) {
+		outline: 1px solid #4cc9f0;
+		outline-offset: -1px;
+	}
 	.pane {
 		display: flex;
 		flex-direction: column;
@@ -1016,6 +1182,20 @@
 		min-width: 0;
 		background: #0a0e14;
 		border: 1px solid transparent;
+	}
+	.pane.empty {
+		border-style: dashed;
+		border-color: #1c2634;
+		background: transparent;
+	}
+	.pempty {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #39485e;
+		font: 11px ui-monospace, monospace;
+		user-select: none;
 	}
 	.pane.focused {
 		border-color: #22304a;

@@ -5,6 +5,11 @@ TU_ZSH_DIR=${ZDOTDIR}
 
 [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"
 
+# PROMPT_SP clears a possibly-partial line before each prompt — fine — but
+# its inverse-% marker wraps into a stray glyph when spawn/fit cols differ.
+# Keep the clear, drop the marker.
+PROMPT_EOL_MARK=''
+
 # Vendored inside the binary — no packages required.
 [[ -f "$TU_ZSH_DIR/vendor/zsh-autosuggestions/zsh-autosuggestions.zsh" ]] \
     && source "$TU_ZSH_DIR/vendor/zsh-autosuggestions/zsh-autosuggestions.zsh"
