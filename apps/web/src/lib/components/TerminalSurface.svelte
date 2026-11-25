@@ -507,13 +507,22 @@
 		-webkit-user-select: text;
 		user-select: text;
 	}
-	/* xterm's native viewport scrollbar is a hover-cursor affordance —
-	   hide it; wheel/drag scrolling is unchanged. */
+	/* xterm viewport scrollbar: keep a minimal floating thumb for
+	   position feedback — no track background over the terminal. */
 	.tsurface :global(.xterm-viewport) {
-		scrollbar-width: none;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar) {
-		display: none;
+		width: 6px;
+		background: transparent;
+	}
+	.tsurface :global(.xterm-viewport::-webkit-scrollbar-thumb) {
+		background: rgba(255, 255, 255, 0.22);
+		border-radius: 3px;
+	}
+	.tsurface :global(.xterm-viewport::-webkit-scrollbar-track) {
+		background: transparent;
 	}
 	.ctxshade {
 		position: fixed;
