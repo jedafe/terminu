@@ -23,8 +23,6 @@
 		alerts,
 		refreshAlerts,
 		ackAlert,
-		movePane,
-		swapPanes,
 		grid,
 		onGrid,
 		assignCell,
@@ -158,22 +156,19 @@
 		);
 	}
 
-	// Drag & drop via interact.js — a tab drags onto a frame (assign) or
-	// onto another tab (move on the edge third, swap on the center). The
-	// dragged tab itself translates with the pointer. Touch drags arm on
-	// a 350ms hold so strip scrolling and pull-to-refresh keep early
-	// movement; mouse drags start immediately.
+	// Drag & drop via interact.js — the frame's grab handle (.fgrab)
+	// carries its session: drop on another frame to swap occupants, or
+	// on a pool tab to trade places (tab fills the frame, session goes
+	// to the pool). The handle follows the pointer while dragging.
 	function initDnd() {
 		let gx = 0,
 			gy = 0,
-			x0 = 0,
-			y0 = 0,
 			didDrag = false;
 		const clearHints = () =>
 			document
 				.querySelectorAll('.drop-hint')
 				.forEach((t) => t.classList.remove('drop-hint', 'hint-before', 'hint-after', 'hint-swap', 'hint-assign'));
-		const hintAt = (x: number, y: number, dragEl: Element) => {
+		const hintAt = (x: number, y: number) => {
 			clearHints();
 			const hit = document.elementFromPoint(x, y);
 			const cell = hit?.closest<HTMLElement>('.pane[data-cell]');
@@ -181,18 +176,15 @@
 				cell.classList.add('drop-hint', 'hint-assign');
 				return;
 			}
-			const el = hit?.closest<HTMLElement>('.pane-tab');
-			if (el && el !== dragEl) {
-				const r = el.getBoundingClientRect();
-				const f = (x - r.left) / r.width;
-				el.classList.add('drop-hint', f < 0.33 ? 'hint-before' : f > 0.67 ? 'hint-after' : 'hint-swap');
-			}
+			hit?.closest<HTMLElement>('.pane-tab')?.classList.add('drop-hint', 'hint-swap');
 		};
 
-		const tabs = interact('.pane-tab')
+		// Drag source is the frame's grab handle (.fgrab), not the tab —
+		// the handle exists only for dragging so it starts instantly on
+		// both mouse and touch, no hold-to-arm needed.
+		const grabs = interact('.fgrab')
 			.draggable({
 				manualStart: true,
-				ignoreFrom: 'button',
 				listeners: {
 					start(ev) {
 						didDrag = false;
@@ -204,7 +196,7 @@
 						const t = ev.target as HTMLElement;
 						t.style.transform = `translate(${gx}px, ${gy}px)`;
 						didDrag = true;
-						hintAt(ev.clientX, ev.clientY, t);
+						hintAt(ev.clientX, ev.clientY);
 					},
 					end(ev) {
 						const t = ev.target as HTMLElement;
@@ -221,72 +213,43 @@
 				}
 			})
 			.on('down', (ev) => {
-				const { interaction, interactable, currentTarget } = ev;
-				x0 = ev.clientX;
-				y0 = ev.clientY;
 				gx = 0;
 				gy = 0;
-				if (ev.pointerType !== 'touch') {
-					interaction.start({ name: 'drag' }, interactable, currentTarget);
-					return;
-				}
-				const arm = setTimeout(() => {
-					stop();
-					interaction.start({ name: 'drag' }, interactable, currentTarget);
-				}, 350);
-				const watch = (p: PointerEvent) => {
-					if (Math.hypot(p.clientX - x0, p.clientY - y0) > 10) stop();
-				};
-				const stop = () => {
-					clearTimeout(arm);
-					window.removeEventListener('pointermove', watch, true);
-					window.removeEventListener('pointerup', stop, true);
-					window.removeEventListener('pointercancel', stop, true);
-				};
-				window.addEventListener('pointermove', watch, true);
-				window.addEventListener('pointerup', stop, true);
-				window.addEventListener('pointercancel', stop, true);
+				ev.interaction.start({ name: 'drag' }, ev.interactable, ev.currentTarget);
 			});
 
+		// Drop on a frame → the two occupants swap slots.
 		const cells = interact('.pane[data-cell]').dropzone({
-			accept: '.pane-tab',
+			accept: '.fgrab',
 			overlap: 'pointer',
 			ondrop: (ev) => {
 				const id = (ev.relatedTarget as HTMLElement).dataset.pid;
 				const k = (ev.target as HTMLElement).dataset.cell;
-				if (!id || !k) return;
+				if (!id || !k || k === cellPos($grid, id)) return;
 				const [r, c] = k.split(':').map(Number);
 				assignCell(id, r, c);
 				scheduleSave();
 			}
 		});
 
+		// Drop on a pool tab → that tab fills the dragged session's frame
+		// and the dragged session returns to the pool.
 		const tabZones = interact('.pane-tab').dropzone({
-			accept: '.pane-tab',
-			// The dragged tab travels with the pointer — without this it
-			// is always its own topmost dropzone and swallows every drop.
-			checker: (dragEvent, event, dropped, dropzone, dropEl) => {
-				if (dropEl === dragEvent.currentTarget) return false;
-				const r = dropEl.getBoundingClientRect();
-				return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
-			},
+			accept: '.fgrab',
+			overlap: 'pointer',
 			ondrop: (ev) => {
-				const el = ev.target as HTMLElement;
 				const id = (ev.relatedTarget as HTMLElement).dataset.pid;
-				const pid = el.dataset.pid;
-				if (!id || !pid || el === ev.relatedTarget) return;
-				const r = el.getBoundingClientRect();
-				const f = (ev.dragEvent.clientX - r.left) / r.width;
-				const toIdx = $panes.findIndex((x) => x.id === pid);
-				if (f < 0.33) movePane(id, toIdx);
-				else if (f > 0.67) movePane(id, toIdx + 1);
-				else swapPanes(id, pid);
+				const tabPid = (ev.target as HTMLElement).dataset.pid;
+				const src = id ? cellPos($grid, id) : null;
+				if (!id || !tabPid || tabPid === id || !src) return;
+				const [r, c] = src.split(':').map(Number);
+				assignCell(tabPid, r, c);
 				scheduleSave();
 			}
 		});
 
 		return () => {
-			tabs.unset();
+			grabs.unset();
 			cells.unset();
 			tabZones.unset();
 		};
@@ -735,6 +698,13 @@
 									/>
 								{/key}
 							</div>
+							<div
+								class="fgrab"
+								data-pid={p.id}
+								role="button"
+								tabindex="-1"
+								title="drag onto another frame or a tab to swap">⠿</div
+							>
 						{:else}
 							<button
 								class="pempty"
@@ -1263,10 +1233,12 @@
 	.divider:hover {
 		background: #22304a;
 	}
-	:global(.pane-tab.dnd-drag) {
-		position: relative;
+	:global(.fgrab.dnd-drag) {
 		z-index: 50;
-		opacity: 0.85;
+		opacity: 0.95;
+		background: #16233a;
+		border-color: #4cc9f0;
+		color: #4cc9f0;
 		box-shadow: 0 4px 14px #000c;
 		cursor: grabbing;
 		will-change: transform;
@@ -1276,12 +1248,6 @@
 	}
 	:global(.pane-tab.hint-swap) {
 		outline: 1px solid #4cc9f0;
-	}
-	:global(.pane-tab.hint-before) {
-		box-shadow: inset 3px 0 0 #4cc9f0;
-	}
-	:global(.pane-tab.hint-after) {
-		box-shadow: inset -3px 0 0 #4cc9f0;
 	}
 	:global(.pane.hint-assign) {
 		outline: 1px solid #4cc9f0;
@@ -1300,6 +1266,33 @@
 		border-style: dashed;
 		border-color: #1c2634;
 		background: transparent;
+	}
+	/* Frame grab handle — the only drag source; sits top-right clear
+	   of the terminal's 12px scrollbar. */
+	.fgrab {
+		position: absolute;
+		top: 6px;
+		right: 18px;
+		z-index: 20;
+		padding: 4px 9px;
+		border-radius: 7px;
+		background: #11161fcc;
+		border: 1px solid #22304a;
+		color: #3d5a80;
+		font-size: 12px;
+		line-height: 1;
+		cursor: grab;
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+	}
+	.fgrab:hover {
+		color: #4cc9f0;
+		border-color: #4cc9f0;
+	}
+	.fgrab:active {
+		cursor: grabbing;
 	}
 	.pempty {
 		flex: 1;
