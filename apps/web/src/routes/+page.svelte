@@ -426,7 +426,13 @@
 		}
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		pickX = Math.min(r.left, innerWidth - 180);
-		pickY = r.bottom + 6;
+		// 3 items × 40px + 8px padding — flip above the trigger when
+		// opening downward would clip at the viewport bottom.
+		const menuH = 3 * 40 + 8;
+		pickY =
+			r.bottom + 6 + menuH > innerHeight
+				? Math.max(6, r.top - menuH - 6)
+				: r.bottom + 6;
 		shellPick = true;
 	}
 
