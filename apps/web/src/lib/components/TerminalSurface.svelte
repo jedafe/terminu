@@ -510,11 +510,11 @@
 	/* xterm viewport scrollbar: keep a minimal floating thumb for
 	   position feedback — no track background over the terminal. */
 	.tsurface :global(.xterm-viewport) {
-		scrollbar-width: thin;
+		scrollbar-width: auto;
 		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar) {
-		width: 7px;
+		width: 12px;
 		background: transparent;
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar-thumb) {

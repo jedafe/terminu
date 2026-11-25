@@ -593,11 +593,11 @@
 		display: flex;
 		gap: 4px;
 		overflow-x: auto;
-		scrollbar-width: thin;
+		scrollbar-width: auto;
 		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 	}
 	.panes::-webkit-scrollbar {
-		height: 7px;
+		height: 12px;
 		background: transparent;
 	}
 	.panes::-webkit-scrollbar-thumb {
