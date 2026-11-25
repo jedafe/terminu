@@ -16,6 +16,11 @@ if [[ "${_UPDATE_SH_COPY:-}" != 1 ]]; then
 	export REPO
 	_UPDATE_SH_COPY=1 exec bash "$_copy" "$@"
 fi
+# The private copy lives in /tmp — remove it on any exit so repeated
+# deploys don't accumulate stale script copies.
+if [[ "${_UPDATE_SH_COPY:-}" == 1 ]]; then
+	trap 'rm -f "$0"' EXIT
+fi
 : "${REPO:?internal error — REPO unset}"
 DEPLOY="$(dirname "$REPO")" # e.g. /home/japa/terminu
 BIN="$DEPLOY/bin/terminu-server"
