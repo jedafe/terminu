@@ -1,0 +1,60 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — gemini set.
+id: gemini.launch
+application: gemini
+name: Launch Gemini
+description: Start an interactive Gemini CLI session
+command:
+  executable: gemini
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [gemini]
+  files: [GEMINI.md]
+tags: [ai, gemini, launch]
+source: builtin
+---
+id: gemini.prompt
+application: gemini
+name: One-shot prompt
+description: Non-interactive prompt
+parameters:
+  - name: prompt
+    type: string
+    required: true
+    flag: -p
+    description: Prompt text
+command:
+  executable: gemini
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [gemini]
+  files: [GEMINI.md]
+tags: [ai, gemini, prompt]
+source: builtin
+---
+id: gemini.version
+application: gemini
+name: Version
+description: Show the CLI version
+command:
+  executable: gemini
+  arguments: [--version]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [gemini]
+  files: [GEMINI.md]
+tags: [ai, gemini, version]
+source: builtin

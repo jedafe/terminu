@@ -71,16 +71,28 @@ type StateUpdate struct {
 }
 
 // spawnArgv builds the child argv per local-target mode (ADR-006).
-// nsenter enters the host's namespaces then execs a login shell as the
-// operator user — the documented interim deployment path.
-func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []string, error) {
+// cmdArgv non-empty is a direct command spawn (manifest execution,
+// launch profile): the session execs that argv — no login shell — and
+// envPairs ride through `env` so they survive sudo env_reset identically
+// on every target path.
+func (m *Manager) spawnArgv(t domain.Target, rec *domain.Session, cmdArgv, envPairs []string) (string, []string, error) {
 	if t.Kind != "local" {
 		return "", nil, errors.New("target kind unsupported in Phase 1: " + t.Kind)
 	}
 	// Managed shell env crosses via each shell's own mechanism —
 	// ZDOTDIR → zsh, -C source → fish, --rcfile → bash — all as argv
 	// commands, so sudo env_reset and su can't strip them.
-	argv := m.shellArgv(shell)
+	login := true
+	argv := m.shellArgv(rec.Shell)
+	if len(cmdArgv) > 0 {
+		login = false
+		argv = cmdArgv
+		if len(envPairs) > 0 {
+			withEnv := []string{"env"}
+			withEnv = append(withEnv, envPairs...)
+			argv = append(withEnv, argv...)
+		}
+	}
 	switch m.cfg.LocalTargetMode {
 	case "nsenter":
 		user := orDefault(m.cfg.HostUser, "japa")
@@ -89,8 +101,13 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		// control breaks ("cannot set terminal process group"). `script`
 		// allocates a fresh pty inside the host namespaces and relays
 		// I/O — the inner shell gets a real ctty.
-		inner := "cd " + shellQuote(orDefault(cwd, "/home/"+user))
-		inner += " && exec script -qfc " + shellQuote("exec "+strings.Join(argv, " ")) + " /dev/null"
+		var inner string
+		if rec.Cwd != "" {
+			inner = "cd " + shellQuote(rec.Cwd) + " && "
+		} else if login {
+			inner = "cd " + shellQuote("/home/"+user) + " && "
+		}
+		inner += "exec script -qfc " + shellQuote("exec "+quoteJoin(argv)) + " /dev/null"
 		return "nsenter", []string{
 			"-t", "1", "-m", "-u", "-i", "-n", "-p",
 			"su", user, "-c", inner,
@@ -101,12 +118,33 @@ func (m *Manager) spawnArgv(t domain.Target, shell, cwd string) (string, []strin
 		// user needs NOPASSWD sudo; sudo keeps our host-devpts ctty so
 		// job control stays native — no relay needed (ADR-006 option 1).
 		if u := m.cfg.HostUser; u != "" && u != currentUser() {
-			return "sudo", append([]string{"-n", "-iu", u, "--"}, argv...), nil
+			if login {
+				return "sudo", append([]string{"-n", "-iu", u, "--"}, argv...), nil
+			}
+			// Direct command: no login shell (it would re-split argv).
+			// -H fixes HOME; --chdir carries the working dir.
+			sudo := []string{"-n", "-Hu", u}
+			if rec.Cwd != "" {
+				sudo = append(sudo, "--chdir", rec.Cwd)
+			}
+			sudo = append(sudo, "--")
+			return "sudo", append(sudo, argv...), nil
 		}
 		return argv[0], argv[1:], nil
 	default: // container — plain spawn as the service user
 		return argv[0], argv[1:], nil
 	}
+}
+
+// quoteJoin shell-joins an argv for the nsenter inner script — each
+// element quoted so spaces survive the one relay that must carry a
+// string (nsenter → su -c → script).
+func quoteJoin(argv []string) string {
+	parts := make([]string, len(argv))
+	for i, a := range argv {
+		parts[i] = shellQuote(a)
+	}
+	return strings.Join(parts, " ")
 }
 
 // shellArgv builds the interactive invocation for a login shell —
@@ -131,6 +169,42 @@ func (m *Manager) shellArgv(shell string) []string {
 		}
 	}
 	return []string{shell, "-l"}
+}
+
+// envOverlay renders a profile/manifest env map as "K=V" pairs. Keys
+// must be valid env names; TU_* is stripped — the daemon-config prefix
+// never enters session env by any path (spawn scrub + this overlay).
+func envOverlay(env map[string]string) ([]string, error) {
+	if len(env) == 0 {
+		return nil, nil
+	}
+	if len(env) > 64 {
+		return nil, errors.New("env: too many entries")
+	}
+	out := make([]string, 0, len(env))
+	for k, v := range env {
+		if strings.HasPrefix(k, "TU_") {
+			continue
+		}
+		if !envKey(k) {
+			return nil, errors.New("env: invalid name " + k)
+		}
+		out = append(out, k+"="+v)
+	}
+	return out, nil
+}
+
+func envKey(s string) bool {
+	for i, r := range s {
+		if r == '_' || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+			continue
+		}
+		if i > 0 && r >= '0' && r <= '9' {
+			continue
+		}
+		return false
+	}
+	return len(s) > 0
 }
 
 func orDefault(s, def string) string {
@@ -176,8 +250,8 @@ func indexOf(s, sub string) int {
 // spawn starts the PTY and its read/exit loops. The child is deliberately
 // NOT tied to the caller's context — server-owned sessions outlive the
 // request that created them.
-func (m *Manager) spawn(ctx context.Context, rec *domain.Session) (*ptySession, error) {
-	name, argv, err := m.spawnArgv(rec.Target, rec.Shell, rec.Cwd)
+func (m *Manager) spawn(ctx context.Context, rec *domain.Session, cmdArgv, envPairs []string) (*ptySession, error) {
+	name, argv, err := m.spawnArgv(rec.Target, rec, cmdArgv, envPairs)
 	if err != nil {
 		return nil, err
 	}

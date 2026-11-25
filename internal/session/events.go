@@ -23,6 +23,7 @@ type Event struct {
 	// it rebinds per fg change, so it rides every emit live.
 	Process    string              `json:"process,omitempty"`
 	Tool       string              `json:"tool,omitempty"`
+	PinStatus  string              `json:"pin_status,omitempty"`
 	State      domain.SessionState `json:"state,omitempty"`
 	Kind       domain.WaitKind     `json:"kind,omitempty"`
 	Confidence domain.Confidence   `json:"confidence,omitempty"`

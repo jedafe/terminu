@@ -1,6 +1,6 @@
 // App state: session registry + pane layout (views over sessions).
 import { writable, derived, get } from 'svelte/store';
-import { api, type Alert, type Session, type Workspace } from './api';
+import { api, type Alert, type LaunchProfile, type Session, type Workspace } from './api';
 import { subscribeEvents } from './ws';
 
 export const sessions = writable<Session[]>([]);
@@ -15,6 +15,8 @@ export interface AgentInfo {
 	process?: string;
 	tool?: string;
 	since?: string;
+	// §06 adapter pin for the bound tool: verified | unverified | unknown
+	pin_status?: string;
 }
 export const agentStates = writable<Record<string, AgentInfo>>({});
 
@@ -62,11 +64,22 @@ export async function refreshAgents() {
 	for (const r of rows) {
 		m[r.session.id] = {
 			state: r.state, kind: r.kind, confidence: r.confidence,
-			process: r.process, tool: r.tool, since: r.since
+			process: r.process, tool: r.tool, since: r.since,
+			pin_status: r.pin_status
 		};
 	}
 	agentStates.set(m);
 }
+
+// §05 launch profiles — the +new menu's agent group.
+export const profiles = writable<LaunchProfile[]>([]);
+export async function refreshProfiles() {
+	profiles.set(await api.profiles().catch(() => []));
+}
+
+// §04 command palette — open state lives in a store so both the ⌘K
+// keybinding and the topbar button drive the same component.
+export const paletteOpen = writable<boolean>(false);
 
 // Pane layout — each pane is a view onto one session id. The pool is
 // every open tab; the grid is a fixed preset of slots that panes are
@@ -392,6 +405,7 @@ export function wireEvents() {
 				confidence?: string;
 				process?: string;
 				tool?: string;
+				pin_status?: string;
 			};
 			agentStates.update((m) => {
 				const prev = m[ev.session_id] ?? {};
@@ -407,6 +421,7 @@ export function wireEvents() {
 						// tool rebinds server-side per fg — the event's copy
 						// is always fresh; absent = no curated adapter bound.
 						tool: ev.tool,
+						pin_status: ev.pin_status ?? prev.pin_status,
 						// fresh transition with no server since → now, not oldest
 						since: changed ? new Date().toISOString() : prev.since
 					}

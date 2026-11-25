@@ -3,7 +3,10 @@ export class ApiError extends Error {
 	constructor(
 		public code: string,
 		public status: number,
-		msg: string
+		msg: string,
+		// Structured error payload — e.g. confirmation_required carries
+		// {confirm_token, argv, expires_in_s} (§04/§09).
+		public detail?: unknown
 	) {
 		super(msg);
 	}
@@ -18,7 +21,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 	const body = await res.json().catch(() => ({}));
 	if (!res.ok) {
 		const e = body?.error ?? {};
-		throw new ApiError(e.code ?? 'internal', res.status, e.message ?? res.statusText);
+		throw new ApiError(e.code ?? 'internal', res.status, e.message ?? res.statusText, e.detail);
 	}
 	return body.data as T;
 }
@@ -44,7 +47,41 @@ export const api = {
 	agents: () => req<AgentView[]>('/api/agents'),
 	agentPrompt: (id: string) => req<AgentPrompt>(`/api/agents/${id}/prompt`),
 	alerts: () => req<Alert[]>('/api/alerts'),
-	ackAlert: (id: number) => req(`/api/alerts/${id}/ack`, { method: 'POST' })
+	ackAlert: (id: number) => req(`/api/alerts/${id}/ack`, { method: 'POST' }),
+	// §04 command intelligence — palette search (context-first when
+	// session_id is given), manifest detail, broker-gated execute.
+	commands: (q = '', sessionId = '', limit = 50) => {
+		const p = new URLSearchParams({ q, limit: String(limit) });
+		if (sessionId) p.set('session_id', sessionId);
+		return req<CommandSummary[]>(`/api/commands?${p}`);
+	},
+	command: (id: string) => req<CommandManifest>(`/api/commands/${encodeURIComponent(id)}`),
+	executeCommand: (id: string, body: ExecInput) =>
+		req<ExecResult>(`/api/commands/${encodeURIComponent(id)}/execute`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		}),
+	commandContext: (sessionId: string) =>
+		req<CommandContext>(`/api/commands/context/${sessionId}`),
+	discovered: (exe?: string) =>
+		req<CommandSummary[]>(exe ? `/api/discovered?exe=${encodeURIComponent(exe)}` : '/api/discovered'),
+	adapters: () => req<AdapterPin[]>('/api/adapters'),
+	// §05 launch profiles — saved argv+env configs, launched via broker.
+	profiles: () => req<LaunchProfile[]>('/api/agents/profiles'),
+	createProfile: (p: ProfileInput) =>
+		req<LaunchProfile>('/api/agents/profiles', { method: 'POST', body: JSON.stringify(p) }),
+	patchProfile: (id: number, p: Partial<ProfileInput>) =>
+		req<{ status: string }>(`/api/agents/profiles/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify(p)
+		}),
+	deleteProfile: (id: number) =>
+		req<{ status: string }>(`/api/agents/profiles/${id}`, { method: 'DELETE' }),
+	launchProfile: (profileId: number, opts: LaunchOpts = {}) =>
+		req<LaunchResult>('/api/agents/launch', {
+			method: 'POST',
+			body: JSON.stringify({ profile_id: profileId, ...opts })
+		})
 };
 
 export interface Session {
@@ -71,6 +108,8 @@ export interface SpawnRequest {
 	name?: string;
 	cols?: number;
 	rows?: number;
+	argv?: string[];
+	env?: Record<string, string>;
 }
 
 export interface Workspace {
@@ -90,6 +129,7 @@ export interface AgentView {
 	kind?: string;
 	confidence?: string;
 	since: string;
+	pin_status?: string;
 	prompt?: AgentPromptBody;
 }
 export interface AgentPromptBody {
@@ -123,4 +163,127 @@ export interface Alert {
 	confidence?: string;
 	acked_at?: string;
 	at: string;
+}
+
+// ---------- §04 command intelligence ----------
+
+// Palette row — the list route's compact shape; context=true means the
+// manifest matched the session's live process/files (context-first).
+export interface CommandSummary {
+	id: string;
+	application: string;
+	name: string;
+	description?: string;
+	tags?: string[];
+	source: string; // builtin | custom | discovered
+	risk: string; // informational | controlled | confirmed | restricted
+	confirmation: boolean;
+	context?: boolean;
+}
+
+// Full manifest — detail route only (adapter-manifest-format.md).
+export interface CommandManifest {
+	id: string;
+	application: string;
+	name: string;
+	description: string;
+	parameters?: CommandParam[];
+	command: { executable: string; arguments: string[] };
+	execution: { risk: string; confirmation: boolean; timeout_s: number; working_dir: string };
+	context: { processes: string[]; files: string[] };
+	tags?: string[];
+	source: string;
+	shadowed_by?: string;
+}
+
+export interface CommandParam {
+	name: string;
+	type: string; // resource | string | number | boolean | enum
+	resource?: string;
+	required?: boolean;
+	flag?: string; // flag form, e.g. "--force"; absent = positional
+	options?: string[];
+	default?: unknown;
+	description?: string;
+}
+
+export interface ExecInput {
+	session_id?: string;
+	params?: Record<string, unknown>;
+	cwd?: string;
+	name?: string;
+	cols?: number;
+	rows?: number;
+	confirm_token?: string;
+}
+
+export interface ExecResult {
+	session: Session;
+	argv: string[];
+	manifest_id: string;
+}
+
+// GET /api/commands/context/{session_id} — the live context read the
+// context-first ranking uses (§04 Context actions).
+export interface CommandContext {
+	session_id: string;
+	processes: string[];
+	tool: string;
+	pin_status: string;
+	cwd: string;
+	commands: CommandSummary[];
+}
+
+// confirmation_required (409) detail payload — the token binds to the
+// exact argv the server built; resubmit with it to proceed (§09).
+export interface ConfirmDetail {
+	confirm_token: string;
+	argv: string[];
+	expires_in_s: number;
+}
+
+// ---------- §05 launch profiles ----------
+
+export interface LaunchProfile {
+	id: number;
+	name: string;
+	tool: string;
+	argv: string[];
+	env: Record<string, string>;
+	cwd: string;
+	resume_cmd: string[];
+}
+
+export interface ProfileInput {
+	name: string;
+	tool?: string;
+	argv: string[];
+	env?: Record<string, string>;
+	cwd?: string;
+	resume_cmd?: string[];
+}
+
+export interface LaunchOpts {
+	resume?: boolean;
+	name?: string;
+	cwd?: string;
+	cols?: number;
+	rows?: number;
+}
+
+export interface LaunchResult {
+	session: Session;
+	profile_id: number;
+	argv: string[];
+}
+
+// ---------- §06 adapters ----------
+
+// GET /api/adapters row — pin status feeding the unverified badge.
+export interface AdapterPin {
+	tool: string;
+	constraint: string;
+	verified_at: string;
+	status: string; // verified | unverified | unknown
+	seen_version?: string;
 }

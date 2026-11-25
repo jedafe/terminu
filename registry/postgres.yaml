@@ -1,0 +1,116 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — postgres set.
+id: postgres.psql
+application: psql
+name: Connect with psql
+description: Open an interactive psql session
+parameters:
+  - name: database
+    type: string
+    required: true
+    flag: null
+    description: Database name
+command:
+  executable: psql
+  arguments: ["{database}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [psql]
+  files: []
+tags: [postgres, psql, connect]
+source: builtin
+---
+id: postgres.list.db
+application: psql
+name: List databases
+description: List databases on the server
+command:
+  executable: psql
+  arguments: [-l]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [psql, postgres]
+  files: []
+tags: [postgres, list, databases]
+source: builtin
+---
+id: postgres.ready
+application: pg_isready
+name: Check readiness
+description: Check whether the server accepts connections
+command:
+  executable: pg_isready
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [postgres, psql]
+  files: []
+tags: [postgres, readiness, health]
+source: builtin
+---
+id: postgres.dump
+application: pg_dump
+name: Dump database
+description: Custom-format dump of a database
+parameters:
+  - name: database
+    type: string
+    required: true
+    flag: null
+  - name: output
+    type: string
+    required: true
+    flag: -f
+    description: Output file path
+command:
+  executable: pg_dump
+  arguments: [-Fc, "{database}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [postgres]
+  files: []
+tags: [postgres, dump, backup]
+source: builtin
+---
+id: postgres.restore
+application: pg_restore
+name: Restore dump
+description: Restore a custom-format dump into a database
+parameters:
+  - name: database
+    type: string
+    required: true
+    flag: -d
+  - name: input
+    type: string
+    required: true
+    flag: null
+    description: Dump file path
+command:
+  executable: pg_restore
+  arguments: ["{input}"]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [postgres]
+  files: []
+tags: [postgres, restore, backup]
+source: builtin

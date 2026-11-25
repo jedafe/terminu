@@ -1,0 +1,149 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — aws set.
+id: aws.identity
+application: aws
+name: Who am I
+description: Show the caller's AWS identity
+command:
+  executable: aws
+  arguments: [sts, get-caller-identity]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aws]
+  files: []
+tags: [aws, sts, identity]
+source: builtin
+---
+id: aws.s3.ls
+application: aws
+name: List S3 buckets
+description: List buckets in the account
+command:
+  executable: aws
+  arguments: [s3, ls]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aws]
+  files: []
+tags: [aws, s3, list]
+source: builtin
+---
+id: aws.s3.ls.bucket
+application: aws
+name: List bucket objects
+description: List objects under a bucket/prefix
+parameters:
+  - name: bucket
+    type: string
+    required: true
+    flag: null
+    description: s3://bucket or bucket/prefix
+command:
+  executable: aws
+  arguments: [s3, ls, "{bucket}"]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aws]
+  files: []
+tags: [aws, s3, list]
+source: builtin
+---
+id: aws.s3.cp
+application: aws
+name: Copy to S3
+description: Upload a local file to S3
+parameters:
+  - name: source
+    type: string
+    required: true
+    flag: null
+    description: Local file path
+  - name: dest
+    type: string
+    required: true
+    flag: null
+    description: s3://bucket/key
+command:
+  executable: aws
+  arguments: [s3, cp, "{source}", "{dest}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aws]
+  files: []
+tags: [aws, s3, cp, upload]
+source: builtin
+---
+id: aws.ec2.instances
+application: aws
+name: List EC2 instances
+description: Describe EC2 instances in the region
+command:
+  executable: aws
+  arguments: [ec2, describe-instances]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aws]
+  files: []
+tags: [aws, ec2, instances]
+source: builtin
+---
+id: aws.ecs.clusters
+application: aws
+name: List ECS clusters
+description: List ECS cluster ARNs
+command:
+  executable: aws
+  arguments: [ecs, list-clusters]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aws]
+  files: []
+tags: [aws, ecs, clusters]
+source: builtin
+---
+id: aws.logs.tail
+application: aws
+name: Tail log group
+description: Tail a CloudWatch log group
+parameters:
+  - name: group
+    type: string
+    required: true
+    flag: null
+    description: Log group name
+command:
+  executable: aws
+  arguments: [logs, tail, "{group}", --follow]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aws]
+  files: []
+tags: [aws, logs, cloudwatch, tail]
+source: builtin

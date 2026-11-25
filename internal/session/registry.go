@@ -108,6 +108,17 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 	}
 	ad := b.ad
 	b.mu.Unlock()
+	// Bound adapter → lazy version probe: once per tool per run, async —
+	// the result feeds /api/adapters + pin_status on agent.state.
+	if ad != nil && fg.PID != 0 {
+		r.m.pins.Probe(ad.Pin().Tool, func(st string) {
+			r.m.events.Pub(Event{
+				Type: "agent.state", SessionID: s.rec.ID,
+				Process: fg.Name(), Tool: ad.Pin().Tool,
+				State: r.lastState(s.rec.ID), PinStatus: st,
+			})
+		})
+	}
 
 	var m *adapter.StateMatch
 	if ad != nil {
@@ -154,15 +165,17 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 	// labels read Process/Tool; needs-you reads State). `alert` rows
 	// persist only the EDGE (prev != st): a repeat detect of the same
 	// wait is not a transition (§05).
-	var tool string
+	var tool, pinStatus string
 	if ad != nil {
 		tool = ad.Pin().Tool
+		pinStatus = r.m.pins.Status(tool)
 	}
 	r.m.events.Pub(Event{
 		Type:       "agent.state",
 		SessionID:  s.rec.ID,
 		Process:    fg.Name(),
 		Tool:       tool,
+		PinStatus:  pinStatus,
 		State:      st,
 		Kind:       kind,
 		Confidence: confidence,

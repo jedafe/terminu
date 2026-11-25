@@ -1,0 +1,310 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — kubectl set.
+id: k8s.contexts
+application: kubectl
+name: List contexts
+description: Show configured kubeconfig contexts
+command:
+  executable: kubectl
+  arguments: [config, get-contexts]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, contexts]
+source: builtin
+---
+id: k8s.context.use
+application: kubectl
+name: Switch context
+description: Switch the active kubeconfig context
+parameters:
+  - name: context
+    type: string
+    required: true
+    flag: null
+command:
+  executable: kubectl
+  arguments: [config, use-context, "{context}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, context]
+source: builtin
+---
+id: k8s.pods
+application: kubectl
+name: List pods
+description: List pods in the current namespace
+command:
+  executable: kubectl
+  arguments: [get, pods]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, pods]
+source: builtin
+---
+id: k8s.pods.all
+application: kubectl
+name: List pods (all namespaces)
+description: List pods across namespaces
+command:
+  executable: kubectl
+  arguments: [get, pods, -A]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, pods]
+source: builtin
+---
+id: k8s.deployments
+application: kubectl
+name: List deployments
+description: List deployments in the current namespace
+command:
+  executable: kubectl
+  arguments: [get, deployments]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, deployments]
+source: builtin
+---
+id: k8s.services
+application: kubectl
+name: List services
+description: List services in the current namespace
+command:
+  executable: kubectl
+  arguments: [get, services]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, services]
+source: builtin
+---
+id: k8s.events
+application: kubectl
+name: Recent events
+description: Show recent cluster events
+command:
+  executable: kubectl
+  arguments: [get, events, --sort-by=.lastTimestamp]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, events]
+source: builtin
+---
+id: k8s.pod.describe
+application: kubectl
+name: Describe pod
+description: Show pod details and events
+parameters:
+  - name: pod
+    type: resource
+    resource: k8s.pod
+    required: true
+    flag: null
+command:
+  executable: kubectl
+  arguments: [describe, pod, "{pod.id}"]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, describe, pod]
+source: builtin
+---
+id: k8s.pod.logs
+application: kubectl
+name: Pod logs
+description: Stream a pod's logs
+parameters:
+  - name: pod
+    type: resource
+    resource: k8s.pod
+    required: true
+    flag: null
+command:
+  executable: kubectl
+  arguments: [logs, "-f", "{pod.id}"]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, logs, pod]
+source: builtin
+---
+id: k8s.pod.exec
+application: kubectl
+name: Shell into pod
+description: Open an interactive shell in a pod
+parameters:
+  - name: pod
+    type: resource
+    resource: k8s.pod
+    required: true
+    flag: null
+  - name: shell
+    type: enum
+    options: ["/bin/sh", "/bin/bash"]
+    required: true
+    flag: null
+    default: "/bin/sh"
+command:
+  executable: kubectl
+  arguments: [exec, -it, "{pod.id}", --, "{shell}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, exec, shell]
+source: builtin
+---
+id: k8s.pod.delete
+application: kubectl
+name: Delete pod
+description: Delete a pod — it reschedules under its controller
+parameters:
+  - name: pod
+    type: resource
+    resource: k8s.pod
+    required: true
+    flag: null
+command:
+  executable: kubectl
+  arguments: [delete, pod, "{pod.id}"]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, delete, pod]
+source: builtin
+---
+id: k8s.rollout.restart
+application: kubectl
+name: Restart deployment
+description: Rolling restart of a deployment
+parameters:
+  - name: deployment
+    type: resource
+    resource: k8s.deployment
+    required: true
+    flag: null
+command:
+  executable: kubectl
+  arguments: [rollout, restart, "deploy/{deployment.id}"]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, rollout, restart]
+source: builtin
+---
+id: k8s.apply
+application: kubectl
+name: Apply manifest
+description: Apply a manifest file to the cluster
+parameters:
+  - name: file
+    type: string
+    required: true
+    flag: -f
+    description: Manifest file path
+command:
+  executable: kubectl
+  arguments: [apply]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: ["*.yaml"]
+tags: [k8s, kubectl, apply]
+source: builtin
+---
+id: k8s.portforward
+application: kubectl
+name: Port-forward pod
+description: Forward local port to a pod
+parameters:
+  - name: pod
+    type: resource
+    resource: k8s.pod
+    required: true
+    flag: null
+  - name: ports
+    type: string
+    required: true
+    flag: null
+    description: local:remote (e.g. 8080:80)
+command:
+  executable: kubectl
+  arguments: [port-forward, "{pod.id}", "{ports}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [kubectl]
+  files: []
+tags: [k8s, kubectl, port-forward]
+source: builtin

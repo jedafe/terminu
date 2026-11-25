@@ -1,0 +1,102 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — aider set.
+id: aider.launch
+application: aider
+name: Launch aider
+description: Start an interactive aider session
+command:
+  executable: aider
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: [.git, .aider.conf.yml]
+tags: [ai, aider, launch]
+source: builtin
+---
+id: aider.launch.model
+application: aider
+name: Launch with model
+description: Start aider pinned to a model
+parameters:
+  - name: model
+    type: string
+    required: true
+    flag: --model
+    description: Model name (e.g. claude-sonnet-4)
+command:
+  executable: aider
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: [.git, .aider.conf.yml]
+tags: [ai, aider, model]
+source: builtin
+---
+id: aider.message
+application: aider
+name: One-shot message
+description: Send a single message and exit
+parameters:
+  - name: message
+    type: string
+    required: true
+    flag: --message
+    description: Instruction text
+command:
+  executable: aider
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: [.git, .aider.conf.yml]
+tags: [ai, aider, message]
+source: builtin
+---
+id: aider.list.models
+application: aider
+name: List models
+description: List models aider knows about
+command:
+  executable: aider
+  arguments: [--list-models, "*"]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: [.git, .aider.conf.yml]
+tags: [ai, aider, models]
+source: builtin
+---
+id: aider.version
+application: aider
+name: Version
+description: Show the aider version
+command:
+  executable: aider
+  arguments: [--version]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: [.git, .aider.conf.yml]
+tags: [ai, aider, version]
+source: builtin

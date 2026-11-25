@@ -43,9 +43,11 @@ type SessionCtx struct {
 // AdapterPin is a version fingerprint (UI: "patterns: devin-cli ≥1.x,
 // verified <date>"). Constraint is the declared coverage range.
 type AdapterPin struct {
-	Tool       string `json:"tool"`        // e.g. "devin"
-	Constraint string `json:"constraint"`  // e.g. ">=1.0 <2.0"
-	VerifiedAt string `json:"verified_at"` // ISO date of last fixture verification
+	Tool        string `json:"tool"`                   // e.g. "devin"
+	Constraint  string `json:"constraint"`             // e.g. ">=1.0 <2.0"
+	VerifiedAt  string `json:"verified_at"`            // ISO date of last fixture verification
+	Status      string `json:"status"`                 // verified | unverified | unknown (live badge)
+	SeenVersion string `json:"seen_version,omitempty"` // last probed binary version
 }
 
 // StateMatch is a Detect() result: classified state + extraction.

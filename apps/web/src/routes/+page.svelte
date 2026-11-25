@@ -2,9 +2,9 @@
      session drawer + pane grid + key bar. Panes are views over
      server-owned sessions — closing one never kills the process. -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import interact from 'interactjs';
-	import { api, type Session } from '$lib/api';
+	import { api, ApiError, type Session } from '$lib/api';
 	import {
 		sessions,
 		panes,
@@ -28,12 +28,16 @@
 		cellPos,
 		applyPreset,
 		sizeCellPair,
-		sizeRowPair
+		sizeRowPair,
+		paletteOpen,
+		profiles,
+		refreshProfiles
 	} from '$lib/stores';
 	import type { Pane } from '$lib/stores';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
 	import InputLine from '$lib/components/InputLine.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 
 	let surfaces: Record<string, TerminalSurface | undefined> = {};
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,6 +95,9 @@
 	// The armed frame — tab clicks route their session here.
 	let focusCell = $state<string | null>(null);
 	let armedCell = $derived(focusCell ?? ($activePane ? cellPos($grid, $activePane) : null));
+	// The palette's context scope — the session in the armed pane feeds
+	// context-first ranking + {session.cwd} resolution (§04).
+	let activeSessionId = $derived($panes.find((p) => p.id === $activePane)?.sessionId ?? '');
 	let gridEl: HTMLElement;
 	let rowEls: (HTMLElement | undefined)[] = [];
 	let justDragged = false;
@@ -343,7 +350,16 @@
 		};
 		shellEl.addEventListener('touchmove', guard, { passive: false });
 		const cleanupDnd = initDnd();
-		const tick = setInterval(() => (now = Date.now()), 15000);
+		// ⌘K / Ctrl-K toggles the command palette from anywhere — same
+		// surface as the topbar ⌘ button.
+		const pal = (e: KeyboardEvent) => {
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+				e.preventDefault();
+				paletteOpen.update((v) => !v);
+			}
+		};
+		window.addEventListener('keydown', pal);
+		const clock = setInterval(() => (now = Date.now()), 15000);
 		void (async () => {
 			await refreshSessions();
 			await refreshAgents();
@@ -357,8 +373,9 @@
 			}
 		})();
 		return () => {
-			clearInterval(tick);
+			clearInterval(clock);
 			cleanupDnd();
+			window.removeEventListener('keydown', pal);
 			shellEl.removeEventListener('touchmove', guard);
 			vv?.removeEventListener('resize', syncVV);
 			vv?.removeEventListener('scroll', syncVV);
@@ -419,21 +436,35 @@
 	let shellPick = $state(false);
 	let pickX = $state(0);
 	let pickY = $state(0);
+	let pickEl: HTMLDivElement | undefined = $state();
+	// §05 launch-profile form state — inline in the +new menu.
+	let profForm = $state(false);
+	let pName = $state('');
+	let pArgv = $state('');
+	let pCwd = $state('');
+	let pErr = $state('');
 	function toggleShellPick(e: MouseEvent) {
 		if (shellPick) {
 			shellPick = false;
+			profForm = false;
 			return;
 		}
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		pickX = Math.min(r.left, innerWidth - 180);
-		// 3 items × 40px + 8px padding — flip above the trigger when
-		// opening downward would clip at the viewport bottom.
-		const menuH = 3 * 40 + 8;
-		pickY =
-			r.bottom + 6 + menuH > innerHeight
-				? Math.max(6, r.top - menuH - 6)
-				: r.bottom + 6;
+		pickX = Math.min(r.left, innerWidth - 200);
+		// Menu height is content-dependent (profiles group) — measure
+		// after render, then flip above the trigger if it clips.
+		pickY = r.bottom + 6;
 		shellPick = true;
+		profForm = false;
+		// Profiles land async and grow the menu — re-flip once they're in.
+		void refreshProfiles().then(() => tick()).then(() => flipPick(r));
+		void tick().then(() => flipPick(r));
+	}
+	// Flip the +new menu above its trigger when it would clip the bottom.
+	function flipPick(r: DOMRect) {
+		if (!pickEl) return;
+		const h = pickEl.offsetHeight;
+		if (r.bottom + 6 + h > innerHeight) pickY = Math.max(6, r.top - h - 6);
 	}
 
 	async function spawn(shell?: string) {
@@ -442,6 +473,55 @@
 		await refreshSessions();
 		newPane(s.id);
 		scheduleSave();
+	}
+
+	// Shared spawn landing — palette executes and profile launches both
+	// arrive as a fresh session that gets its own tab + frame.
+	async function spawned(s: Session) {
+		await refreshSessions();
+		newPane(s.id);
+		scheduleSave();
+	}
+
+	async function launchProf(id: number, resume = false) {
+		shellPick = false;
+		try {
+			const res = await api.launchProfile(id, { resume, cols: 120, rows: 30 });
+			await spawned(res.session);
+		} catch {
+			/* launch failed — menu stays put, nothing spawned */
+		}
+	}
+
+	async function saveProfile() {
+		pErr = '';
+		const argv = pArgv.trim().split(/\s+/).filter(Boolean);
+		try {
+			await api.createProfile({
+				name: pName.trim(),
+				argv,
+				cwd: pCwd.trim() || undefined
+			});
+			pName = '';
+			pArgv = '';
+			pCwd = '';
+			profForm = false;
+			await refreshProfiles();
+		} catch (e) {
+			pErr = e instanceof ApiError ? e.message : 'save failed';
+		}
+	}
+
+	async function delProfile(id: number, e: Event) {
+		e.stopPropagation();
+		await api.deleteProfile(id).catch(() => {});
+		await refreshProfiles();
+	}
+
+	// §06 pin badge — only `unverified` surfaces (a probed binary that
+	// failed the adapter's version constraint); unknown = still probing.
+	function pinUnv(id: string) {
+		return $agentStates[id]?.pin_status === 'unverified';
 	}
 
 	function openSession(s: Session) {
@@ -573,7 +653,7 @@
 					onkeydown={() => activePane.set(p.id)}
 				>
 					{#if needsYouId(p.sessionId)}<span class="tabdot needs"></span>{/if}
-					{tabLabel(p)}
+					{tabLabel(p)}{#if pinUnv(p.sessionId)}<span class="tabpin" title="adapter pin unverified">!</span>{/if}
 					<button
 						class="tabx"
 						aria-label="close tab"
@@ -586,16 +666,45 @@
 				</div>
 			{/each}
 			<button class="tb add" aria-label="new session" onclick={toggleShellPick}>+</button>
+			<button class="tb" aria-label="command palette" title="command palette (⌘K)" onclick={() => paletteOpen.set(true)}>⌘</button>
 		</div>
 	</header>
 
 	{#if shellPick}
 		<!-- svelte-ignore a11y_no_static_element_interactions — backdrop only -->
 		<div class="shade" onpointerdown={() => (shellPick = false)} oncontextmenu={(e) => e.preventDefault()}></div>
-		<div class="shellpick" style:left="{pickX}px" style:top="{pickY}px" role="menu">
+		<div class="shellpick" bind:this={pickEl} style:left="{pickX}px" style:top="{pickY}px" role="menu">
+			<div class="mgrp">shell</div>
 			<button class="cx" role="menuitem" onclick={() => spawn('/bin/bash')}>bash</button>
 			<button class="cx" role="menuitem" onclick={() => spawn('/bin/zsh')}>zsh</button>
 			<button class="cx" role="menuitem" onclick={() => spawn('/bin/fish')}>fish</button>
+			<div class="mgrp">agents</div>
+			{#each $profiles as pr (pr.id)}
+				<div class="mrow">
+					<button class="cx" role="menuitem" onclick={() => void launchProf(pr.id)}>
+						{pr.name}
+						<span class="marg">{pr.argv.join(' ')}</span>
+					</button>
+					{#if pr.resume_cmd?.length}
+						<button class="cx sm" role="menuitem" title="resume — {pr.resume_cmd.join(' ')}" onclick={() => void launchProf(pr.id, true)}>↻</button>
+					{/if}
+					<button class="cx sm" role="menuitem" title="delete profile" onclick={(e) => void delProfile(pr.id, e)}>✕</button>
+				</div>
+			{/each}
+			{#if profForm}
+				<div class="mform">
+					<input class="mt" placeholder="name" bind:value={pName} />
+					<input class="mt" placeholder="argv — e.g. claude --continue" autocapitalize="off" autocorrect="off" spellcheck="false" bind:value={pArgv} />
+					<input class="mt" placeholder="cwd (optional)" autocapitalize="off" bind:value={pCwd} />
+					{#if pErr}<div class="merr">{pErr}</div>{/if}
+					<div class="mcta">
+						<button class="msave" disabled={!pName.trim() || !pArgv.trim()} onclick={() => void saveProfile()}>save</button>
+						<button class="mcx" onclick={() => (profForm = false)}>cancel</button>
+					</div>
+				</div>
+			{:else}
+				<button class="cx dim" role="menuitem" onclick={() => (profForm = true)}>+ save profile…</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -805,6 +914,14 @@
 		}}
 		kbdOn={coarsePtr() ? kbdArmed : kbdOpen}
 	/>
+
+	{#if $paletteOpen}
+		<CommandPalette
+			sessionId={activeSessionId}
+			onspawn={(s) => void spawned(s)}
+			onclose={() => paletteOpen.set(false)}
+		/>
+	{/if}
 </div>
 
 <!-- one session row — dot, name + tool badge, state/wait subline, and the
@@ -823,6 +940,7 @@
 			<span class="stop">
 				<span class="sname">{label(s)}</span>
 				{#if toolBadge(s)}<span class="badge">{toolBadge(s)}</span>{/if}
+				{#if pinUnv(s.id)}<span class="badge unv" title="adapter pin unverified — binary version outside the tested constraint">unverified</span>{/if}
 			</span>
 			<span class="ssub" class:needs={needsYou(s)}>
 				{subLabel(s)}{#if detachedOf(s)}<span class="det"> · unattended</span>{/if}
@@ -853,7 +971,10 @@
 	.shellpick {
 		position: fixed;
 		z-index: 56;
-		min-width: 120px;
+		min-width: 190px;
+		max-width: min(300px, 92vw);
+		max-height: 62dvh;
+		overflow-y: auto;
 		background: #11161f;
 		border: 1px solid #2b3b55;
 		border-radius: 10px;
@@ -875,6 +996,85 @@
 	.cx:active,
 	.cx:hover {
 		background: #1e2a3d;
+	}
+	/* +new menu groups: shells, then saved agent launch profiles. */
+	.mgrp {
+		padding: 8px 14px 2px;
+		color: #3d4d68;
+		font: 10px ui-monospace, monospace;
+		letter-spacing: 0.15em;
+	}
+	.mrow {
+		display: flex;
+		align-items: stretch;
+	}
+	.mrow .cx {
+		flex: 1;
+		min-width: 0;
+	}
+	.marg {
+		display: block;
+		font-size: 10px;
+		color: #4a5568;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.cx.sm {
+		flex: 0 0 auto;
+		width: 44px;
+	}
+	.cx.dim {
+		color: #5a6f92;
+	}
+	.mform {
+		padding: 4px 8px 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.mt {
+		background: #0d1117;
+		border: 1px solid #22304a;
+		border-radius: 7px;
+		color: #d7e1f0;
+		font: 12px ui-monospace, monospace;
+		padding: 8px 10px;
+		outline: none;
+		min-height: 36px;
+	}
+	.mt:focus {
+		border-color: #4cc9f0;
+	}
+	.merr {
+		font: 11px ui-monospace, monospace;
+		color: #ff8080;
+		padding: 0 2px;
+	}
+	.mcta {
+		display: flex;
+		gap: 6px;
+		justify-content: flex-end;
+	}
+	.msave {
+		min-height: 38px;
+		padding: 0 16px;
+		border: 1px solid #1d3550;
+		border-radius: 8px;
+		background: #0e1a26;
+		color: #4cc9f0;
+		font: 12px ui-monospace, monospace;
+	}
+	.msave:disabled {
+		opacity: 0.4;
+	}
+	.mcx {
+		min-height: 38px;
+		padding: 0 12px;
+		border: 0;
+		background: transparent;
+		color: #6b7f9e;
+		font: 12px ui-monospace, monospace;
 	}
 	.ptr {
 		position: fixed;
@@ -1113,6 +1313,18 @@
 		border-radius: 5px;
 		padding: 1px 6px;
 		background: #0e1a26;
+	}
+	/* §06 pin mismatch — probed binary fell outside the adapter's
+	   declared version constraint. */
+	.badge.unv {
+		color: #d0a24a;
+		border-color: #3d3014;
+		background: #1a160c;
+	}
+	.tabpin {
+		color: #f0b429;
+		font: 11px ui-monospace, monospace;
+		margin-left: 5px;
 	}
 	.ssub {
 		font: 11px ui-monospace, monospace;

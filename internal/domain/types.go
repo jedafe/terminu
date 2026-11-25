@@ -83,14 +83,19 @@ type Session struct {
 	Detached bool `json:"detached,omitempty"`
 }
 
-// SpawnRequest is POST /api/sessions.
+// SpawnRequest is POST /api/sessions. Argv + Env are the command
+// surfaces shared by manifest execution and launch profiles: when Argv
+// is set the session runs that argv directly (executable first) instead
+// of a login shell.
 type SpawnRequest struct {
-	Target string `json:"target"`
-	Cwd    string `json:"cwd"`
-	Shell  string `json:"shell"`
-	Name   string `json:"name"`
-	Cols   int    `json:"cols"`
-	Rows   int    `json:"rows"`
+	Target string            `json:"target"`
+	Cwd    string            `json:"cwd"`
+	Shell  string            `json:"shell"`
+	Name   string            `json:"name"`
+	Cols   int               `json:"cols"`
+	Rows   int               `json:"rows"`
+	Argv   []string          `json:"argv,omitempty"`
+	Env    map[string]string `json:"env,omitempty"`
 }
 
 // Workspace is a saved layout — views over sessions, not processes.

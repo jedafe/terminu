@@ -1,0 +1,361 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — builtin docker set.
+id: docker.ps
+application: docker
+name: Running containers
+description: List running containers
+command:
+  executable: docker
+  arguments: [ps]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, ps, containers]
+source: builtin
+---
+id: docker.ps.all
+application: docker
+name: All containers
+description: List all containers including stopped
+command:
+  executable: docker
+  arguments: [ps, -a]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, ps, containers]
+source: builtin
+---
+id: docker.images
+application: docker
+name: List images
+description: List local images
+command:
+  executable: docker
+  arguments: [images]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, images]
+source: builtin
+---
+id: docker.container.logs
+application: docker
+name: View container logs
+description: Stream logs for a container
+parameters:
+  - name: container
+    type: resource
+    resource: docker.container
+    required: true
+    flag: null
+    description: Container name or id
+command:
+  executable: docker
+  arguments: [logs, "-f", "{container.id}"]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, logs, ops]
+source: builtin
+---
+id: docker.container.exec
+application: docker
+name: Shell into container
+description: Open an interactive shell in a running container
+parameters:
+  - name: container
+    type: resource
+    resource: docker.container
+    required: true
+    flag: null
+  - name: shell
+    type: enum
+    options: ["/bin/sh", "/bin/bash"]
+    required: true
+    flag: null
+    default: "/bin/sh"
+command:
+  executable: docker
+  arguments: [exec, -it, "{container.id}", "{shell}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, exec, shell]
+source: builtin
+---
+id: docker.container.stop
+application: docker
+name: Stop container
+description: Stop a running container
+parameters:
+  - name: container
+    type: resource
+    resource: docker.container
+    required: true
+    flag: null
+command:
+  executable: docker
+  arguments: [stop, "{container.id}"]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, stop]
+source: builtin
+---
+id: docker.container.start
+application: docker
+name: Start container
+description: Start a stopped container
+parameters:
+  - name: container
+    type: resource
+    resource: docker.container
+    required: true
+    flag: null
+command:
+  executable: docker
+  arguments: [start, "{container.id}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, start]
+source: builtin
+---
+id: docker.container.restart
+application: docker
+name: Restart container
+description: Restart a container
+parameters:
+  - name: container
+    type: resource
+    resource: docker.container
+    required: true
+    flag: null
+command:
+  executable: docker
+  arguments: [restart, "{container.id}"]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, restart]
+source: builtin
+---
+id: docker.image.pull
+application: docker
+name: Pull image
+description: Pull an image from the registry
+parameters:
+  - name: image
+    type: string
+    required: true
+    flag: null
+    description: image:tag
+command:
+  executable: docker
+  arguments: [pull, "{image}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile]
+tags: [docker, pull, image]
+source: builtin
+---
+id: docker.image.build
+application: docker
+name: Build image
+description: Build an image from the current directory's Dockerfile
+parameters:
+  - name: tag
+    type: string
+    required: true
+    flag: -t
+    description: image:tag to apply
+command:
+  executable: docker
+  arguments: [build, .]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile]
+tags: [docker, build, image]
+source: builtin
+---
+id: docker.inspect
+application: docker
+name: Inspect object
+description: Show low-level metadata for a container or image
+parameters:
+  - name: object
+    type: string
+    required: true
+    flag: null
+    description: Container, image, or volume name/id
+command:
+  executable: docker
+  arguments: [inspect, "{object}"]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, inspect]
+source: builtin
+---
+id: docker.system.df
+application: docker
+name: Disk usage
+description: Show docker disk usage
+command:
+  executable: docker
+  arguments: [system, df]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, disk, df]
+source: builtin
+---
+id: docker.system.prune
+application: docker
+name: Prune unused data
+description: Remove all stopped containers, dangling images, and unused networks
+command:
+  executable: docker
+  arguments: [system, prune, "-f"]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: []
+tags: [docker, prune, cleanup]
+source: builtin
+---
+id: docker.compose.ps
+application: docker
+name: Compose services
+description: List compose services for the cwd project
+command:
+  executable: docker
+  arguments: [compose, ps]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, compose, ps]
+source: builtin
+---
+id: docker.compose.up
+application: docker
+name: Compose up (detached)
+description: Start the compose project detached
+command:
+  executable: docker
+  arguments: [compose, up, -d]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, compose, up]
+source: builtin
+---
+id: docker.compose.down
+application: docker
+name: Compose down
+description: Stop and remove the compose project's containers
+command:
+  executable: docker
+  arguments: [compose, down]
+execution:
+  risk: confirmed
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, compose, down]
+source: builtin
+---
+id: docker.compose.logs
+application: docker
+name: Compose logs
+description: Stream the compose project's logs
+command:
+  executable: docker
+  arguments: [compose, logs, "-f", "--tail", "100"]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [docker]
+  files: [docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml]
+tags: [docker, compose, logs]
+source: builtin

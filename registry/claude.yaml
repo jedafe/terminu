@@ -1,0 +1,132 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — claude set.
+id: claude.launch
+application: claude
+name: Launch Claude
+description: Start an interactive Claude Code session
+command:
+  executable: claude
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: [CLAUDE.md, .claude]
+tags: [ai, claude, launch]
+source: builtin
+---
+id: claude.resume
+application: claude
+name: Resume session
+description: Resume the most recent Claude session
+command:
+  executable: claude
+  arguments: [--continue]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: [CLAUDE.md, .claude]
+tags: [ai, claude, resume]
+source: builtin
+---
+id: claude.print
+application: claude
+name: One-shot prompt
+description: Non-interactive prompt (print mode)
+parameters:
+  - name: prompt
+    type: string
+    required: true
+    flag: null
+    description: Prompt text
+command:
+  executable: claude
+  arguments: ["-p", "{prompt}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: [CLAUDE.md, .claude]
+tags: [ai, claude, prompt]
+source: builtin
+---
+id: claude.doctor
+application: claude
+name: Doctor
+description: Diagnose installation health
+command:
+  executable: claude
+  arguments: [doctor]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: [CLAUDE.md, .claude]
+tags: [ai, claude, doctor, health]
+source: builtin
+---
+id: claude.update
+application: claude
+name: Update
+description: Update the Claude CLI
+command:
+  executable: claude
+  arguments: [update]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: [CLAUDE.md, .claude]
+tags: [ai, claude, update]
+source: builtin
+---
+id: claude.config.list
+application: claude
+name: Show config
+description: List configuration values
+command:
+  executable: claude
+  arguments: [config, list]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: [CLAUDE.md, .claude]
+tags: [ai, claude, config]
+source: builtin
+---
+id: claude.version
+application: claude
+name: Version
+description: Show the CLI version
+command:
+  executable: claude
+  arguments: [--version]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: [CLAUDE.md, .claude]
+tags: [ai, claude, version]
+source: builtin

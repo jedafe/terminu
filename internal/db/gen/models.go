@@ -8,6 +8,15 @@ import (
 	"database/sql"
 )
 
+type AdapterPin struct {
+	Tool          string `json:"tool"`
+	PinConstraint string `json:"pin_constraint"`
+	VerifiedAt    string `json:"verified_at"`
+	SeenVersion   string `json:"seen_version"`
+	Status        string `json:"status"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
 type Alert struct {
 	ID         int64          `json:"id"`
 	SessionID  string         `json:"session_id"`
@@ -38,6 +47,50 @@ type AuthSession struct {
 	CreatedAt string         `json:"created_at"`
 	ExpiresAt string         `json:"expires_at"`
 	RevokedAt sql.NullString `json:"revoked_at"`
+}
+
+type CommandManifest struct {
+	ID           string         `json:"id"`
+	Source       string         `json:"source"`
+	Application  string         `json:"application"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	Params       string         `json:"params"`
+	Executable   string         `json:"executable"`
+	Arguments    string         `json:"arguments"`
+	Risk         string         `json:"risk"`
+	Confirmation int64          `json:"confirmation"`
+	TimeoutS     int64          `json:"timeout_s"`
+	WorkingDir   string         `json:"working_dir"`
+	CtxProcesses string         `json:"ctx_processes"`
+	CtxFiles     string         `json:"ctx_files"`
+	Tags         string         `json:"tags"`
+	ShadowedBy   sql.NullString `json:"shadowed_by"`
+	Enabled      int64          `json:"enabled"`
+	CreatedAt    string         `json:"created_at"`
+	UpdatedAt    string         `json:"updated_at"`
+}
+
+type Fixture struct {
+	ID         int64          `json:"id"`
+	Tool       string         `json:"tool"`
+	Version    string         `json:"version"`
+	Scenario   string         `json:"scenario"`
+	Path       string         `json:"path"`
+	LastResult string         `json:"last_result"`
+	ReplayedAt sql.NullString `json:"replayed_at"`
+}
+
+type LaunchProfile struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Tool      string `json:"tool"`
+	Argv      string `json:"argv"`
+	Env       string `json:"env"`
+	Cwd       string `json:"cwd"`
+	ResumeCmd string `json:"resume_cmd"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type Session struct {

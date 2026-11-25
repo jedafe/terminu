@@ -15,11 +15,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jedafe/terminu/internal/adapter"
 	"github.com/jedafe/terminu/internal/auth"
 	"github.com/jedafe/terminu/internal/broker"
 	"github.com/jedafe/terminu/internal/config"
 	"github.com/jedafe/terminu/internal/db"
 	"github.com/jedafe/terminu/internal/db/gen"
+	"github.com/jedafe/terminu/internal/registry"
 	"github.com/jedafe/terminu/internal/server"
 	"github.com/jedafe/terminu/internal/session"
 )
@@ -63,7 +65,21 @@ func run() error {
 		return fmt.Errorf("auth seed: %w", err)
 	}
 	br := broker.New(q)
-	srv := server.New(cfg, q, authSvc, br, mgr, bus)
+
+	// §04: command registry — builtin + custom sources sync to the
+	// table, shadow resolution rebuilds the search index.
+	reg := registry.New(q, cfg.DataDir)
+	if err := reg.Sync(ctx); err != nil {
+		return fmt.Errorf("registry sync: %w", err)
+	}
+	// §06: declared adapter pins persist; the fixture suite replays at
+	// boot so /api/adapters/{tool} reads a current pass/fail record.
+	if err := mgr.SyncPins(ctx); err != nil {
+		return fmt.Errorf("pin sync: %w", err)
+	}
+	replayFixtures(ctx, q)
+
+	srv := server.New(cfg, q, authSvc, br, mgr, bus, reg)
 
 	addr := cfg.Bind + ":" + strconv.Itoa(cfg.Port)
 	hs := &http.Server{
@@ -93,4 +109,37 @@ func run() error {
 	_ = hs.Shutdown(ctx)
 	mgr.CloseAll()
 	return nil
+}
+
+// replayFixtures registers every embedded .cast in the fixtures table
+// and records the boot smoke result — a failing fixture warns loudly in
+// logs and shows as last_result=fail on the adapter route.
+func replayFixtures(ctx context.Context, q *gen.Queries) {
+	results := adapter.SmokeAll()
+	failed := 0
+	for _, res := range results {
+		status := "pass"
+		if !res.Pass {
+			status = "fail"
+			failed++
+		}
+		if err := q.UpsertFixture(ctx, gen.UpsertFixtureParams{
+			Tool: res.Tool, Version: res.Version,
+			Scenario: res.Scenario, Path: res.Path,
+		}); err != nil {
+			slog.Warn("fixture upsert", "err", err)
+			continue
+		}
+		if err := q.UpdateFixtureResult(ctx, gen.UpdateFixtureResultParams{
+			LastResult: status, Tool: res.Tool,
+			Version: res.Version, Scenario: res.Scenario,
+		}); err != nil {
+			slog.Warn("fixture result", "err", err)
+		}
+	}
+	if failed > 0 {
+		slog.Warn("fixture replay failures", "failed", failed, "total", len(results))
+	} else {
+		slog.Info("fixture replay green", "total", len(results))
+	}
 }

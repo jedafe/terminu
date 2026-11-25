@@ -1,0 +1,96 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — codex set.
+id: codex.launch
+application: codex
+name: Launch Codex
+description: Start an interactive Codex session
+command:
+  executable: codex
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [codex]
+  files: [AGENTS.md]
+tags: [ai, codex, launch]
+source: builtin
+---
+id: codex.exec
+application: codex
+name: Non-interactive task
+description: Run a task headlessly (exec mode)
+parameters:
+  - name: task
+    type: string
+    required: true
+    flag: null
+    description: Task description
+command:
+  executable: codex
+  arguments: [exec, "{task}"]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [codex]
+  files: [AGENTS.md]
+tags: [ai, codex, exec]
+source: builtin
+---
+id: codex.resume
+application: codex
+name: Resume session
+description: Resume a previous Codex session
+command:
+  executable: codex
+  arguments: [resume]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [codex]
+  files: [AGENTS.md]
+tags: [ai, codex, resume]
+source: builtin
+---
+id: codex.login
+application: codex
+name: Login
+description: Authenticate the Codex CLI
+command:
+  executable: codex
+  arguments: [login]
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [codex]
+  files: [AGENTS.md]
+tags: [ai, codex, login, auth]
+source: builtin
+---
+id: codex.version
+application: codex
+name: Version
+description: Show the CLI version
+command:
+  executable: codex
+  arguments: [--version]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [codex]
+  files: [AGENTS.md]
+tags: [ai, codex, version]
+source: builtin

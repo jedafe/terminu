@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/terminu/internal/config"
 	"github.com/jedafe/terminu/internal/db/gen"
 	"github.com/jedafe/terminu/internal/domain"
+	"github.com/jedafe/terminu/internal/registry"
 	"github.com/jedafe/terminu/internal/session"
 )
 
@@ -30,13 +31,14 @@ type Server struct {
 	br   *broker.Broker
 	mgr  *session.Manager
 	bus  *session.EventBus
+	reg  *registry.Registry
 	mux  *http.ServeMux
 
 	throttle loginThrottle
 }
 
-func New(cfg *config.Config, q *gen.Queries, a *auth.Service, b *broker.Broker, m *session.Manager, bus *session.EventBus) *Server {
-	s := &Server{cfg: cfg, q: q, auth: a, br: b, mgr: m, bus: bus, mux: http.NewServeMux(),
+func New(cfg *config.Config, q *gen.Queries, a *auth.Service, b *broker.Broker, m *session.Manager, bus *session.EventBus, reg *registry.Registry) *Server {
+	s := &Server{cfg: cfg, q: q, auth: a, br: b, mgr: m, bus: bus, reg: reg, mux: http.NewServeMux(),
 		throttle: loginThrottle{fails: map[string][]time.Time{}}}
 	s.routes()
 	return s
@@ -118,6 +120,18 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/sessions/{id}/scrollback", s.requireAuth(s.scrollback))
 	s.mux.HandleFunc("GET /api/agents", s.requireAuth(s.listAgents))
 	s.mux.HandleFunc("GET /api/agents/{id}/prompt", s.requireAuth(s.agentPrompt))
+	s.mux.HandleFunc("GET /api/agents/profiles", s.requireAuth(s.listProfiles))
+	s.mux.HandleFunc("POST /api/agents/profiles", s.requireAuth(s.createProfile))
+	s.mux.HandleFunc("PATCH /api/agents/profiles/{id}", s.requireAuth(s.patchProfile))
+	s.mux.HandleFunc("DELETE /api/agents/profiles/{id}", s.requireAuth(s.deleteProfile))
+	s.mux.HandleFunc("POST /api/agents/launch", s.requireAuth(s.launchProfile))
+	s.mux.HandleFunc("GET /api/adapters", s.requireAuth(s.listAdapters))
+	s.mux.HandleFunc("GET /api/adapters/{tool}", s.requireAuth(s.getAdapter))
+	s.mux.HandleFunc("GET /api/commands", s.requireAuth(s.listCommands))
+	s.mux.HandleFunc("GET /api/commands/context/{session_id}", s.requireAuth(s.commandContext))
+	s.mux.HandleFunc("GET /api/commands/{id}", s.requireAuth(s.getCommand))
+	s.mux.HandleFunc("POST /api/commands/{id}/execute", s.requireAuth(s.executeCommand))
+	s.mux.HandleFunc("GET /api/discovered", s.requireAuth(s.discovered))
 	s.mux.HandleFunc("GET /api/alerts", s.requireAuth(s.listAlerts))
 	s.mux.HandleFunc("POST /api/alerts/{id}/ack", s.requireAuth(s.ackAlert))
 	s.mux.HandleFunc("GET /api/workspaces", s.requireAuth(s.listWorkspaces))

@@ -41,6 +41,10 @@ type Manager struct {
 	// waiting states (§06 pipeline consumer).
 	reg *registry
 
+	// pins tracks adapter pin status per tool — declared constraints
+	// synced at boot, seen versions probed lazily on first bind.
+	pins *pinStore
+
 	// env is the materialized managed shell layer — empty fields
 	// degrade those shells to plain spawns.
 	env shellenv.Env
@@ -52,6 +56,7 @@ var ErrStillLive = errors.New("session still live — terminate before delete")
 
 func NewManager(cfg *config.Config, q *gen.Queries, bus *EventBus) *Manager {
 	m := &Manager{cfg: cfg, q: q, live: map[string]*ptySession{}, events: bus}
+	m.pins = newPinStore(q)
 	m.reg = newRegistry(m)
 	m.env = shellenv.Materialize(cfg.DataDir)
 	return m
@@ -86,6 +91,16 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	if tgt.Kind == "" {
 		tgt.Kind = "local"
 	}
+	// Direct command spawns (manifest execute, launch profile) record the
+	// executable as the row's shell — honest about what the PTY runs.
+	cmdArgv := req.Argv
+	if len(cmdArgv) > 0 {
+		shell = cmdArgv[0]
+	}
+	envPairs, err := envOverlay(req.Env)
+	if err != nil {
+		return nil, err
+	}
 	cols, rows := req.Cols, req.Rows
 	if cols <= 0 {
 		cols = 80
@@ -115,7 +130,7 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	// entered is in session_state_log, not just the detected ones.
 	_ = m.q.LogSessionState(ctx, gen.LogSessionStateParams{
 		SessionID: rec.ID, State: string(domain.StateStarting)})
-	ps, err := m.spawn(ctx, rec)
+	ps, err := m.spawn(ctx, rec, cmdArgv, envPairs)
 	if err != nil {
 		_ = m.q.UpdateSessionState(ctx, gen.UpdateSessionStateParams{
 			State: string(domain.StateError), ID: rec.ID})
@@ -353,11 +368,48 @@ type AgentView struct {
 	Session    *domain.Session     `json:"session"`
 	Process    string              `json:"process"`
 	Tool       string              `json:"tool,omitempty"`
+	PinStatus  string              `json:"pin_status,omitempty"`
 	State      domain.SessionState `json:"state"`
 	Kind       domain.WaitKind     `json:"kind,omitempty"`
 	Confidence domain.Confidence   `json:"confidence,omitempty"`
 	Since      time.Time           `json:"since"`
 	Prompt     *adapter.Prompt     `json:"prompt,omitempty"`
+}
+
+// Pins returns the adapter pin set with live badge status — /api/adapters.
+func (m *Manager) Pins() []adapter.AdapterPin {
+	out := make([]adapter.AdapterPin, 0, len(m.reg.adapters))
+	for _, a := range m.reg.adapters {
+		pin := a.Pin()
+		pin.Status = m.pins.Status(pin.Tool)
+		pin.SeenVersion = m.pins.Seen(pin.Tool)
+		out = append(out, pin)
+	}
+	return out
+}
+
+// SyncPins upserts the declared pin set at boot.
+func (m *Manager) SyncPins(ctx context.Context) error {
+	return m.pins.SyncDeclared(ctx, m.reg.adapters)
+}
+
+// SessionContext feeds /api/commands/context/{session_id}: the live
+// foreground process name + bound tool as process signals, the session
+// cwd for file matching, and the bound tool's pin badge.
+func (m *Manager) SessionContext(id string) (procs []string, cwd, tool, pinStatus string, err error) {
+	s, err := m.Attach(id)
+	if err != nil {
+		return nil, "", "", "", err
+	}
+	cwd = s.Rec().Cwd
+	tool, _ = m.reg.Bound(id)
+	if fg := m.reg.fgName(id); fg != "" {
+		procs = append(procs, fg)
+	}
+	if tool != "" {
+		procs = append(procs, tool)
+	}
+	return procs, cwd, tool, m.pins.Status(tool), nil
 }
 
 // Agents returns live sessions in needs-you order: waiting-for-input
@@ -378,6 +430,9 @@ func (m *Manager) Agents() []AgentView {
 		v := AgentView{
 			Session: s.Rec(), Process: m.reg.fgName(s.rec.ID),
 			Tool: tool, State: u.State, Since: u.At,
+		}
+		if tool != "" {
+			v.PinStatus = m.pins.Status(tool)
 		}
 		if u.Match != nil {
 			v.Kind, v.Confidence, v.Prompt = u.Match.Kind, u.Match.Confidence, u.Match.Prompt

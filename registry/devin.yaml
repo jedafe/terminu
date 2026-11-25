@@ -1,0 +1,54 @@
+# Ref: .teos/conventions/adapter-manifest-format.md — devin set.
+id: devin.launch
+application: devin
+name: Launch Devin
+description: Start an interactive Devin CLI session
+command:
+  executable: devin
+  arguments: []
+execution:
+  risk: controlled
+  confirmation: true
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [devin]
+  files: [.devin]
+tags: [ai, devin, launch]
+source: builtin
+---
+id: devin.version
+application: devin
+name: Version
+description: Show the CLI version
+command:
+  executable: devin
+  arguments: [--version]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [devin]
+  files: [.devin]
+tags: [ai, devin, version]
+source: builtin
+---
+id: devin.help
+application: devin
+name: Help
+description: Show the CLI help
+command:
+  executable: devin
+  arguments: [--help]
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [devin]
+  files: [.devin]
+tags: [ai, devin, help]
+source: builtin
