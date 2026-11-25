@@ -35,7 +35,6 @@
 	let searchOpen = $state(false);
 	let searchQ = $state('');
 	let prompt = $state<PromptFrame | null>(null);
-	let maybeWaiting = $state(false);
 	let freeReply = $state('');
 
 	// Custom scroll thumb — the native viewport scrollbar paints under the
@@ -167,17 +166,12 @@
 				if (status !== 'dead') status = 'reconnecting';
 			},
 			// Ref: .teos/sections/05-agent-session-management.md — prompt
-			// overlay. Low-confidence waits hint only, never buttons.
-			state: (m) => {
-				maybeWaiting = m.state === 'waiting-for-input' && m.confidence === 'low' && !prompt;
-			},
+			// overlay. Low-confidence waits get no visual at all.
 			prompt: (p) => {
 				prompt = p;
-				maybeWaiting = false;
 			},
 			promptClear: () => {
 				prompt = null;
-				maybeWaiting = false;
 			}
 		});
 		client.connect();
@@ -664,8 +658,6 @@
 				</div>
 			{/if}
 		</div>
-	{:else if maybeWaiting}
-		<div class="maybe">may be waiting — no clear prompt detected</div>
 	{/if}
 
 	{#if ctx}
@@ -907,20 +899,6 @@
 		background: #1f5c8b;
 		color: #dbe7f7;
 		font: 14px ui-monospace, monospace;
-	}
-	.maybe {
-		position: absolute;
-		z-index: 1;
-		bottom: 10px;
-		left: 50%;
-		transform: translateX(-50%);
-		background: #2a2213f0;
-		border: 1px solid #4a3d1e;
-		color: #d8bd74;
-		font: 12px/1 ui-monospace, monospace;
-		padding: 8px 12px;
-		border-radius: 8px;
-		pointer-events: none;
 	}
 	.tools {
 		position: absolute;
