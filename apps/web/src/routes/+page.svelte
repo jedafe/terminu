@@ -21,7 +21,10 @@
 		agentStates,
 		alerts,
 		refreshAlerts,
-		ackAlert
+		ackAlert,
+		movePane,
+		swapPanes,
+		sizePair
 	} from '$lib/stores';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
@@ -56,6 +59,124 @@
 	let pull = $state(0);
 	let ptrBusy = $state(false);
 	let shellEl: HTMLDivElement;
+
+	// Pane resize + reorder: dividers redistribute a pair's weight,
+	// tab drags move/swap positions. Both persist via scheduleSave.
+	let gridEl: HTMLElement;
+	let paneEls: (HTMLElement | undefined)[] = [];
+	let justDragged = false;
+
+	function divDown(e: PointerEvent, i: number) {
+		if (e.button !== 0) return;
+		e.preventDefault();
+		const d = e.currentTarget as HTMLElement;
+		try {
+			d.setPointerCapture(e.pointerId);
+		} catch {
+			// synthetic/stale pointer — capture is a nicety, not a requirement
+		}
+		const horiz = getComputedStyle(gridEl).flexDirection === 'row';
+		const a = $panes[i - 1];
+		const b = $panes[i];
+		const ra = paneEls[i - 1]!.getBoundingClientRect();
+		const rb = paneEls[i]!.getBoundingClientRect();
+		const pairPx = horiz ? ra.width + rb.width : ra.height + rb.height;
+		const start = horiz ? ra.left : ra.top;
+		const total = (a.size ?? 1) + (b.size ?? 1);
+		let moved = false;
+		const move = (ev: PointerEvent) => {
+			const pos = (horiz ? ev.clientX : ev.clientY) - start;
+			const size = (pos / pairPx) * total;
+			if (!moved && Math.abs(size - (a.size ?? 1)) > total * 0.02) moved = true;
+			if (moved) sizePair(a.id, b.id, size);
+		};
+		const up = () => {
+			d.removeEventListener('pointermove', move);
+			d.removeEventListener('pointerup', up);
+			d.removeEventListener('pointercancel', up);
+			if (!moved) {
+				// click (no drag): cycle the pair through 1/1 → 2/1 → 1/2
+				const ratio = (a.size ?? 1) / total;
+				const next = ratio > 0.6 ? 1 / 3 : ratio > 0.4 ? 2 / 3 : 0.5;
+				sizePair(a.id, b.id, total * next);
+			}
+			scheduleSave();
+		};
+		d.addEventListener('pointermove', move);
+		d.addEventListener('pointerup', up);
+		d.addEventListener('pointercancel', up);
+	}
+
+	function tabDown(e: PointerEvent, id: string) {
+		if (e.button !== 0 || (e.target as Element).closest('.tabx')) return;
+		const tab = e.currentTarget as HTMLElement;
+		const x0 = e.clientX;
+		const y0 = e.clientY;
+		let dragging = false;
+		// Touch: drag arms only on a 350ms hold — earlier movement is
+		// claimed by tab-strip scroll or pull-to-refresh.
+		let armed = e.pointerType !== 'touch';
+		const armTimer = armed ? 0 : setTimeout(() => (armed = true), 350);
+		const clearHints = () =>
+			document.querySelectorAll('.pane-tab.drop-hint').forEach((t) => t.classList.remove('drop-hint', 'hint-before', 'hint-after', 'hint-swap'));
+		const cleanup = () => {
+			clearTimeout(armTimer);
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', up);
+			window.removeEventListener('pointercancel', cancel);
+		};
+		const cancel = () => {
+			cleanup();
+			dragging = false;
+			tab.classList.remove('dragging');
+			clearHints();
+		};
+		const move = (ev: PointerEvent) => {
+			const dx = ev.clientX - x0;
+			const dy = ev.clientY - y0;
+			if (!dragging) {
+				if (!armed) {
+					if (Math.hypot(dx, dy) > 10) cleanup(); // scroll/pull owns it
+					return;
+				}
+				if (Math.hypot(dx, dy) <= 8) return;
+				dragging = true;
+				justDragged = true;
+				tab.classList.add('dragging');
+			}
+			clearHints();
+			const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.pane-tab');
+			if (el && el !== tab) {
+				const r = el.getBoundingClientRect();
+				const f = (ev.clientX - r.left) / r.width;
+				el.classList.add('drop-hint', f < 0.33 ? 'hint-before' : f > 0.67 ? 'hint-after' : 'hint-swap');
+			}
+		};
+		const up = (ev: PointerEvent) => {
+			cleanup();
+			tab.classList.remove('dragging');
+			// The synthetic click lands before the timeout — suppress it
+			// during a drag, then reset for the next plain click.
+			setTimeout(() => (justDragged = false), 0);
+			if (dragging) {
+				const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.pane-tab');
+				const pid = (el as HTMLElement | null)?.dataset.pid;
+				if (el && el !== tab && pid) {
+					const r = el.getBoundingClientRect();
+					const f = (ev.clientX - r.left) / r.width;
+					const toIdx = $panes.findIndex((x) => x.id === pid);
+					if (f < 0.33) movePane(id, toIdx);
+					else if (f > 0.67) movePane(id, toIdx + 1);
+					else swapPanes(id, pid);
+					scheduleSave();
+				}
+			}
+			clearHints();
+		};
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', up, { once: true });
+		window.addEventListener('pointercancel', cancel, { once: true });
+	}
 
 	function ptrDown(e: PointerEvent) {
 		if (e.pointerType !== 'touch' || ptrBusy) return;
@@ -320,9 +441,15 @@
 				<div
 					class="pane-tab"
 					class:active={$activePane === p.id}
+					data-pid={p.id}
 					role="button"
 					tabindex="0"
+					onpointerdown={(e) => tabDown(e, p.id)}
 					onclick={() => {
+						if (justDragged) {
+							justDragged = false;
+							return;
+						}
 						activePane.set(p.id);
 						scheduleSave();
 					}}
@@ -419,11 +546,18 @@
 		</div>
 	{/if}
 
-	<!-- terminal grid -->
-	<main class="grid" class:single={$panes.length <= 1}>
-		{#each $panes as p (p.id)}
+	<!-- terminal grid: flex row (desktop) / column (mobile), panes carry
+	     relative size weights; dividers redistribute the pair's total. -->
+	<main class="grid" class:single={$panes.length <= 1} bind:this={gridEl}>
+		{#each $panes as p, i (p.id)}
+			{#if i > 0}
+				<!-- svelte-ignore a11y_no_static_element_interactions — splitter -->
+				<div class="divider" onpointerdown={(e) => divDown(e, i)}></div>
+			{/if}
 			<section
 				class="pane"
+				bind:this={paneEls[i]}
+				style:flex="{p.size ?? 1} 1 0"
 				class:focused={$activePane === p.id}
 				role="button"
 				tabindex="0"
@@ -829,17 +963,51 @@
 	}
 	.grid {
 		flex: 1;
-		display: grid;
-		grid-auto-rows: 1fr;
+		display: flex;
+		flex-direction: column;
 		gap: 2px;
 		min-height: 0;
 		background: #06090d;
 	}
 	@media (min-width: 900px) {
 		.grid {
-			grid-auto-flow: column;
-			grid-auto-columns: 1fr;
+			flex-direction: row;
 		}
+	}
+	/* Splitter overlays the 2px gap — zero layout cost, 8px hit zone. */
+	.divider {
+		flex-shrink: 0;
+		z-index: 3;
+		touch-action: none;
+	}
+	@media (min-width: 900px) {
+		.divider {
+			width: 8px;
+			margin: 0 -4px;
+			cursor: col-resize;
+		}
+	}
+	@media (max-width: 899.5px) {
+		.divider {
+			height: 8px;
+			margin: -4px 0;
+			cursor: row-resize;
+		}
+	}
+	.divider:hover {
+		background: #22304a;
+	}
+	:global(.pane-tab.dragging) {
+		opacity: 0.4;
+	}
+	:global(.pane-tab.hint-swap) {
+		outline: 1px solid #4cc9f0;
+	}
+	:global(.pane-tab.hint-before) {
+		box-shadow: inset 3px 0 0 #4cc9f0;
+	}
+	:global(.pane-tab.hint-after) {
+		box-shadow: inset -3px 0 0 #4cc9f0;
 	}
 	.pane {
 		display: flex;

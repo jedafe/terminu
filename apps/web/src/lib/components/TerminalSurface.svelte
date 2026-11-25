@@ -67,7 +67,11 @@
 		const track = e.currentTarget as HTMLElement;
 		e.preventDefault();
 		e.stopPropagation();
-		track.setPointerCapture(e.pointerId);
+		try {
+			track.setPointerCapture(e.pointerId);
+		} catch {
+			// synthetic/stale pointer — capture is a nicety, not a requirement
+		}
 		const jump = (ev: PointerEvent) => {
 			const r = track.getBoundingClientRect();
 			if (!vpEl) return;
