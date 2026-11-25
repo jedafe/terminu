@@ -14,6 +14,23 @@ PROD_BIN="$DEPLOY/bin/terminu-server"
 
 [[ -x "$DEV_BIN" ]] || { echo "no dev binary at $DEV_BIN — run deploy/shell/update-dev.sh first" >&2; exit 1; }
 
+# Refuse when invoked inside a prod session: the bounce ends every prod
+# terminu session including this one. Run from a dev.shell.japa.to
+# session or an out-of-band shell instead. --force overrides.
+if [[ "${1:-}" != "--force" && "${1:-}" != "--no-restart" ]]; then
+	_p=$$
+	while [[ "$_p" -gt 1 ]]; do
+		_c=$(ps -o comm= -p "$_p" 2>/dev/null) || break
+		if [[ "$_c" == terminu-server ]]; then
+			echo "refusing: this shell is inside a prod terminu session —" >&2
+			echo "the restart ends every prod session, this one included." >&2
+			echo "run promote.sh from a dev.shell.japa.to session, or pass --force." >&2
+			exit 1
+		fi
+		_p=$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' ')
+	done
+fi
+
 # Guard against regressing prod with an older dev build.
 if [[ "$PROD_BIN" -nt "$DEV_BIN" && "${1:-}" != "--force" ]]; then
 	echo "prod binary is NEWER than dev binary:"
