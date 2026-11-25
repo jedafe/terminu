@@ -104,6 +104,35 @@ func TestBuildEnumAndBoolean(t *testing.T) {
 	}
 }
 
+// An absent optional param must drop its argv element — an empty-string
+// arg would reach execve literally and confuse the child.
+func TestBuildOptionalDrops(t *testing.T) {
+	m := &Manifest{
+		ID: "x.opt", Application: "x", Name: "x",
+		Parameters: []Parameter{
+			{Name: "ref", Type: "string"},
+			{Name: "tag", Type: "string", Flag: strp("--tag")},
+		},
+		Command:   CommandSpec{Executable: "x", Arguments: []string{"show", "{ref}"}},
+		Execution: ExecSpec{Risk: "informational"},
+	}
+	argv, _, err := m.Build(map[string]any{}, SessionCtx{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(argv, " ") != "x show" {
+		t.Fatalf("argv = %v want [x show]", argv)
+	}
+	// Present-but-empty optional flag drops the flag too.
+	argv, _, err = m.Build(map[string]any{"ref": "HEAD", "tag": ""}, SessionCtx{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(argv, " ") != "x show HEAD" {
+		t.Fatalf("argv = %v want [x show HEAD]", argv)
+	}
+}
+
 // Source priority: builtin > custom > discovered — loser keeps its row
 // marked shadowed_by, and regains the index when the winner goes away.
 func TestSourceShadowing(t *testing.T) {

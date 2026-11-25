@@ -51,14 +51,14 @@ func score(q string, m *Manifest) int {
 	if q == "" {
 		return 0
 	}
-	hay := strings.ToLower(m.ID + " " + m.Name + " " + m.Application + " " + strings.Join(m.Tags, " "))
+	hay := []rune(strings.ToLower(m.ID + " " + m.Name + " " + m.Application + " " + strings.Join(m.Tags, " ")))
 	hi := 0
 	sc := 0
 	run := 0
 	for _, qc := range q {
 		found := -1
 		for hi < len(hay) {
-			if rune(hay[hi]) == qc {
+			if hay[hi] == qc {
 				found = hi
 				break
 			}

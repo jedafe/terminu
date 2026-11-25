@@ -27,7 +27,12 @@ func (m *Manifest) Build(params map[string]any, sess SessionCtx) (argv []string,
 	}
 	argv = append(argv, m.Command.Executable)
 	for _, arg := range m.Command.Arguments {
-		argv = append(argv, substitute(arg, vals, sess))
+		// An element that resolves to "" — an absent optional param —
+		// drops out of argv entirely (an empty-string arg would reach
+		// execve as a literal "" and confuse the child).
+		if v := substitute(arg, vals, sess); v != "" {
+			argv = append(argv, v)
+		}
 	}
 	// Flagged params render after the argument templates — a subcommand
 	// argv like `git commit` + flag `-m` must land as `git commit -m x`,
@@ -46,6 +51,9 @@ func (m *Manifest) Build(params map[string]any, sess SessionCtx) (argv []string,
 				argv = append(argv, *p.Flag)
 			}
 			continue
+		}
+		if v == "" {
+			continue // "--flag """ is ambiguous — an empty value drops the flag
 		}
 		argv = append(argv, *p.Flag, v)
 	}

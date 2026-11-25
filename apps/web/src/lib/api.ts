@@ -251,7 +251,7 @@ export interface LaunchProfile {
 	argv: string[];
 	env: Record<string, string>;
 	cwd: string;
-	resume_cmd: string[];
+	resume_cmd: string[] | null;
 }
 
 export interface ProfileInput {

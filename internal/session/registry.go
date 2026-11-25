@@ -35,6 +35,7 @@ type binding struct {
 	lastKey string      // dedup key of last emitted match
 	lastFG  string      // last fg name emitted — fg moves emit without a state change
 	lastUp  StateUpdate // last emitted transition — session sockets resync from it
+	lastPin string      // last pin_status emitted — probe results emit on edges only
 	// Alert re-arm state: a waiting alert is persisted once per wait
 	// episode. Flapping working↔waiting during a redraw can't respawn
 	// rows — re-arm only after the session holds a non-waiting state
@@ -109,12 +110,22 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 	ad := b.ad
 	b.mu.Unlock()
 	// Bound adapter → lazy version probe: once per tool per run, async —
-	// the result feeds /api/adapters + pin_status on agent.state.
+	// the result feeds /api/adapters + pin_status on agent.state. Emit
+	// only on a status edge (unknown → verified|unverified) — the
+	// callback fires on every gate event for a bound tool.
 	if ad != nil && fg.PID != 0 {
-		r.m.pins.Probe(ad.Pin().Tool, func(st string) {
+		tool := ad.Pin().Tool
+		r.m.pins.Probe(tool, func(st string) {
+			b.mu.Lock()
+			changed := st != b.lastPin
+			b.lastPin = st
+			b.mu.Unlock()
+			if !changed {
+				return
+			}
 			r.m.events.Pub(Event{
 				Type: "agent.state", SessionID: s.rec.ID,
-				Process: fg.Name(), Tool: ad.Pin().Tool,
+				Process: fg.Name(), Tool: tool,
 				State: r.lastState(s.rec.ID), PinStatus: st,
 			})
 		})

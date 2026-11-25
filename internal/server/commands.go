@@ -132,7 +132,10 @@ func (s *Server) executeCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	argv, cwd, err := m.Build(req.Params, sctx)
 	if err != nil {
-		writeErr(w, 400, "invalid_manifest", err.Error())
+		// The manifest already validated at load — a Build failure is a
+		// param problem (missing required, bad enum/number), i.e. the
+		// request's fault: bad_request, not invalid_manifest.
+		writeErr(w, 400, "bad_request", err.Error())
 		return
 	}
 	if req.Cwd != "" {

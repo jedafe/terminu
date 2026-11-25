@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/jedafe/terminu/internal/broker"
@@ -121,7 +122,10 @@ func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
 		tool = strings.TrimSpace(*in.Tool)
 	}
 	if tool == "" {
-		tool = argv[0]
+		// Default the adapter binding to the binary basename — a path
+		// argv[0] (/usr/bin/claude) must still resolve pins/context by
+		// tool name ("claude").
+		tool = filepath.Base(argv[0])
 	}
 	ab, _ := json.Marshal(argv)
 	row, err := s.q.CreateProfile(r.Context(), gen.CreateProfileParams{
@@ -186,7 +190,7 @@ func (s *Server) patchProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	ab, _ := json.Marshal(argv)
 	if out.Tool == "" {
-		out.Tool = argv[0]
+		out.Tool = filepath.Base(argv[0])
 	}
 	if err := s.q.UpdateProfile(r.Context(), gen.UpdateProfileParams{
 		Name: name, Tool: out.Tool, Argv: string(ab), Env: envJSON,
