@@ -511,15 +511,18 @@
 	   position feedback — no track background over the terminal. */
 	.tsurface :global(.xterm-viewport) {
 		scrollbar-width: thin;
-		scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar) {
-		width: 6px;
+		width: 7px;
 		background: transparent;
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar-thumb) {
-		background: rgba(255, 255, 255, 0.22);
-		border-radius: 3px;
+		background: rgba(255, 255, 255, 0.3);
+		border-radius: 4px;
+	}
+	.tsurface :global(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+		background: rgba(255, 255, 255, 0.45);
 	}
 	.tsurface :global(.xterm-viewport::-webkit-scrollbar-track) {
 		background: transparent;

@@ -593,10 +593,22 @@
 		display: flex;
 		gap: 4px;
 		overflow-x: auto;
-		scrollbar-width: none;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 	}
 	.panes::-webkit-scrollbar {
-		display: none;
+		height: 7px;
+		background: transparent;
+	}
+	.panes::-webkit-scrollbar-thumb {
+		background: rgba(255, 255, 255, 0.3);
+		border-radius: 4px;
+	}
+	.panes::-webkit-scrollbar-thumb:hover {
+		background: rgba(255, 255, 255, 0.45);
+	}
+	.panes::-webkit-scrollbar-track {
+		background: transparent;
 	}
 	.pane-tab {
 		height: 44px;
