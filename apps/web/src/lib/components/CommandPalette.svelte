@@ -280,6 +280,9 @@
 				{#if rows.length === 0 && !err}
 					<div class="cempty">no commands</div>
 				{/if}
+				{#if err}
+					<div class="perr" style="padding: 10px 12px">{err}</div>
+				{/if}
 				{#if canDiscover}
 					<button class="crow cdisc" disabled={discBusy} onclick={() => void discover()}>
 						{discBusy ? `reading ${q} --help…` : `discover "${q}" — read --help`}
