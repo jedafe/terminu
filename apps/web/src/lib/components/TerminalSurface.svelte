@@ -202,17 +202,52 @@
 	// default + TUI holding the mouse: taps/long-press/contextmenu
 	//   re-dispatch real button reports the TUI understands.
 	// select armed (ctx-menu "select" or a sticky-Shift keybar tap):
-	//   primary mousedown is re-dispatched shift-modified — xterm takes
-	//   its built-in forced-selection path (the desktop Shift+drag
-	//   escape) even while a TUI owns the mouse. Shift-arm is per-
-	//   gesture; menu-armed 'select' holds until a menu action or
-	//   "cancel select" ends the episode.
+	//   the pointer stream drives a synthetic mousedown/mousemove/mouseup
+	//   sequence — compat mouse events can't be trusted on touch because
+	//   the scroll claim suppresses them mid-drag. Inside a TUI the fake
+	//   events carry shiftKey → xterm's force-select path; in a plain
+	//   shell they don't (the plain-click path anchors the highlight).
+	//   Synthesis only starts once the finger moves past the tap
+	//   threshold — a tap or long-press stays a no-op so an existing
+	//   highlight survives to the copy step. Shift-arm is per-gesture;
+	//   menu-armed 'select' holds until a menu action or "cancel
+	//   select" ends the episode.
 	const LP_MS = 450;
 	const LP_MOVE = 12;
 	let lpTimer: ReturnType<typeof setTimeout> | undefined;
 	let lpPt: { x: number; y: number } | null = null;
 	let lpAt = 0;
 	let lastGesture = 0;
+	// touchSel: this gesture is an armed select — drive the synthetic
+	// sequence on moves. selDown keeps the press point for the anchor;
+	// selLive flips when synthesis actually began (past LP_MOVE).
+	let touchSel = false;
+	let selDown: { x: number; y: number } | null = null;
+	let selLive = false;
+	// The armed-select path exists for touch — a mouse already has
+	// Shift+drag. Gate the menu item on a real touch capability.
+	const canTouch =
+		navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches;
+
+	function fireSelMouse(type: 'mousedown' | 'mousemove' | 'mouseup', x: number, y: number) {
+		const scr = el.querySelector('.xterm-screen') ?? el;
+		const ev = new MouseEvent(type, {
+			bubbles: true,
+			cancelable: true,
+			// shift = xterm's force-select escape — only needed (and only
+			// correct) while a TUI owns the mouse; in a plain shell the
+			// unmodified press anchors natively.
+			shiftKey: tuiMouse(),
+			button: 0,
+			buttons: type === 'mouseup' ? 0 : 1,
+			// the selection service only anchors on detail === 1
+			detail: type === 'mousedown' ? 1 : 0,
+			clientX: x,
+			clientY: y
+		});
+		(ev as unknown as { __tsynth: boolean }).__tsynth = true;
+		scr.dispatchEvent(ev);
+	}
 
 	const tuiMouse = () => (term?.modes?.mouseTrackingMode ?? 'none') !== 'none';
 
@@ -307,10 +342,10 @@
 		if (ctx) rightClickAt(ctx.x, ctx.y);
 		endCtx();
 	}
-	// Armed select: drags force-highlight (synthesized shift+mousedown)
-	// even while a TUI owns the mouse. The arm has to survive to the
-	// copy step — a plain press would clobber the highlight — so it
-	// holds until a menu action or this same item cancels it.
+	// Armed select: the next drag force-highlights (synthesized mouse
+	// stream) even while a TUI owns the mouse. The arm has to survive
+	// to the copy step — a plain press would clobber the highlight —
+	// so it holds until a menu action or this same item cancels it.
 	function ctxSelect() {
 		const armed = get(touchMode) === 'select';
 		ctx = null;
@@ -324,8 +359,9 @@
 
 	// Short tap: a TUI holding the mouse owns the click (xterm's native
 	// touch path already reported it). A selection gesture — armed
-	// select or armed Shift — turned the press into shift+click, never
-	// an input request. Otherwise the tap asks for the input line — the
+	// select or armed Shift — is never an input request either: taps
+	// stay no-ops so they can't clobber a highlight, only drags
+	// synthesize. Otherwise the tap asks for the input line — the
 	// surface is the on-ramp to typing.
 	function tap() {
 		if (gestureSel || tuiMouse()) return;
@@ -357,17 +393,34 @@
 			// pointerdown precedes the mousedown that consumes an armed
 			// Shift, so tap()/armPull can't rely on the store.
 			gestureSel = get(touchMode) === 'select' || get(kbdMods).shift;
+			if (gestureSel) {
+				touchSel = true;
+				selDown = { x: e.clientX, y: e.clientY };
+				selLive = false;
+				// Consume only shift — ctrl/alt keep waiting for a keystroke.
+				if (get(kbdMods).shift) kbdMods.update((m) => ({ ...m, shift: false }));
+			}
 			lpPt = { x: e.clientX, y: e.clientY };
 			lpAt = Date.now();
 			lpTimer = setTimeout(lpFire, LP_MS);
 			armPull(e);
 		});
+		// While a select gesture is armed, own the whole gesture: no
+		// scroll claim, no compat events — the synthetic stream below
+		// is the only driver. Same trick the pull path uses.
+		el.addEventListener(
+			'touchstart',
+			(e) => {
+				if (touchSel && e.cancelable) e.preventDefault();
+			},
+			{ passive: false }
+		);
 		// Same scroll-claim guard as the shell: while a pull is armed,
 		// cancel the browser's claim or the drag dies as pointercancel.
 		el.addEventListener(
 			'touchmove',
 			(e) => {
-				if (pullStart >= 0 && e.cancelable) e.preventDefault();
+				if ((pullStart >= 0 || touchSel) && e.cancelable) e.preventDefault();
 			},
 			{ passive: false }
 		);
@@ -380,6 +433,17 @@
 				if (dy < -6 || (dx > 12 && dx > Math.abs(dy))) pullStart = -1;
 				else onpull?.(dy > 0 ? dy : 0);
 			}
+			if (touchSel && selDown && e.pointerType === 'touch') {
+				if (!selLive) {
+					if (Math.hypot(e.clientX - selDown.x, e.clientY - selDown.y) <= LP_MOVE)
+						return;
+					// Past the tap threshold — anchor at the press point,
+					// then this move becomes the first extension.
+					fireSelMouse('mousedown', selDown.x, selDown.y);
+					selLive = true;
+				}
+				fireSelMouse('mousemove', e.clientX, e.clientY);
+			}
 		});
 		// lpPt surviving to pointerup = press shorter than LP_MS with no
 		// move (long-press and scroll both clear it first).
@@ -389,13 +453,27 @@
 				onpullrelease?.(e.clientY - pullStart);
 				pullStart = -1;
 			}
+			if (touchSel) {
+				// Only a drag ever synthesized — xterm still needs the
+				// mouseup to drop its document-level drag listeners.
+				if (selLive) fireSelMouse('mouseup', e.clientX, e.clientY);
+				touchSel = false;
+				selLive = false;
+				selDown = null;
+			}
 			gestureSel = false;
 			cancelLp();
 		});
-		el.addEventListener('pointercancel', () => {
+		el.addEventListener('pointercancel', (e) => {
 			if (pullStart >= 0) {
 				onpullrelease?.(0);
 				pullStart = -1;
+			}
+			if (touchSel) {
+				if (selLive) fireSelMouse('mouseup', e.clientX, e.clientY);
+				touchSel = false;
+				selLive = false;
+				selDown = null;
 			}
 			gestureSel = false;
 			cancelLp();
@@ -502,7 +580,12 @@
 	}
 </script>
 
-<div class="tsurface" class:inactive={!active} class:select-mode={$touchMode === 'select'}>
+<div
+	class="tsurface"
+	class:inactive={!active}
+	class:select-mode={$touchMode === 'select'}
+	class:shiftarmed={$kbdMods.shift}
+>
 	<div bind:this={el} class="term"></div>
 
 	{#if vshow}
@@ -582,9 +665,11 @@
 			{/if}
 			<button class="cx" role="menuitem" onclick={ctxCopyLine}>copy line</button>
 			<button class="cx" role="menuitem" onclick={ctxPaste}>paste</button>
-			<button class="cx" role="menuitem" onclick={ctxSelect}
-				>{$touchMode === 'select' ? 'cancel select' : 'select'}</button
-			>
+			{#if canTouch}
+				<button class="cx" role="menuitem" onclick={ctxSelect}
+					>{$touchMode === 'select' ? 'cancel select' : 'select'}</button
+				>
+			{/if}
 			<button class="cx" role="menuitem" onclick={ctxSelectAll}>select all</button>
 			{#if ctx.tui}
 				<button class="cx" role="menuitem" onclick={ctxRightClick}>send right-click</button>
@@ -637,6 +722,14 @@
 	.select-mode :global(.xterm) {
 		-webkit-user-select: text;
 		user-select: text;
+	}
+	/* Armed select (menu episode or a sticky-Shift keybar tap): own the
+	   gesture outright. preventDefault can't veto a compositor scroll
+	   claim — touch-action can, and it must be set before the gesture
+	   starts, which is exactly what the armed classes guarantee. */
+	.select-mode .term,
+	.shiftarmed .term {
+		touch-action: none;
 	}
 	/* The native viewport scrollbar paints under the .xterm-screen canvas —
 	   hide it; .vscroll renders the thumb above the canvas instead. */
