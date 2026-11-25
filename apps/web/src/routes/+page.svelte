@@ -605,6 +605,9 @@
 		{@const needs = $orderedSessions.filter(needsYou)}
 		{@const running = $orderedSessions.filter((s) => isLive(s) && !needsYou(s))}
 		{@const finished = $orderedSessions.filter(isFinished)}
+		<!-- outside-press dismiss — the shade sits under the drawer and
+		     below the topbar so the ☰ toggle still works. -->
+		<div class="dshade" onpointerdown={() => drawerOpen.set(false)} oncontextmenu={(e) => e.preventDefault()}></div>
 		<div class="drawer">
 			<div class="dhead">
 				<span>sessions</span>
@@ -1031,6 +1034,14 @@
 	}
 	.drawer::-webkit-scrollbar-track {
 		background: transparent;
+	}
+	.dshade {
+		position: fixed;
+		top: calc(50px + env(safe-area-inset-top, 0px));
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 19;
 	}
 	.dhead {
 		display: flex;
