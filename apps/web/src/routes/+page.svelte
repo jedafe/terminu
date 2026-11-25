@@ -87,6 +87,9 @@
 	let cellCount = $derived($grid.reduce((n, r) => n + r.cells.length, 0));
 	// Which frame's session-switcher is open ("r:c"), or null.
 	let pickCell = $state<string | null>(null);
+	// The armed frame — tab clicks route their session here.
+	let focusCell = $state<string | null>(null);
+	let armedCell = $derived(focusCell ?? ($activePane ? cellPos($grid, $activePane) : null));
 	let gridEl: HTMLElement;
 	let rowEls: (HTMLElement | undefined)[] = [];
 	let justDragged = false;
@@ -516,6 +519,13 @@
 							justDragged = false;
 							return;
 						}
+						// Route the tab's session into the armed frame —
+						// displaces its occupant, or swaps slots when the
+						// tab already sits in a frame.
+						const k = armedCell ?? '0:0';
+						const [r, c] = k.split(':').map(Number);
+						assignCell(p.id, r, c);
+						focusCell = k;
 						activePane.set(p.id);
 						scheduleSave();
 					}}
@@ -651,12 +661,18 @@
 						class:empty={!p}
 						data-cell="{ri}:{ci}"
 						style:flex="{cell.size ?? 1} 1 0"
-						class:focused={p && $activePane === p.id}
+						class:focused={armedCell === `${ri}:${ci}`}
 						role="button"
 						tabindex="0"
-						onclick={() => p && activePane.set(p.id)}
+						onclick={() => {
+							focusCell = `${ri}:${ci}`;
+							if (p) activePane.set(p.id);
+						}}
 						onkeydown={(e) => {
-							if (p && (e.key === 'Enter' || e.key === ' ')) activePane.set(p.id);
+							if (e.key === 'Enter' || e.key === ' ') {
+								focusCell = `${ri}:${ci}`;
+								if (p) activePane.set(p.id);
+							}
 						}}
 					>
 						{#if p}
@@ -695,6 +711,7 @@
 								onclick={(e) => {
 									e.stopPropagation();
 									const k = `${ri}:${ci}`;
+									focusCell = k;
 									pickCell = pickCell === k ? null : k;
 								}}>drop a tab here, or pick a session ▾</button
 							>
@@ -711,6 +728,7 @@
 											e.stopPropagation();
 											assignCell(pp.id, ri, ci);
 											pickCell = null;
+											activePane.set(pp.id);
 											scheduleSave();
 										}}
 									>
