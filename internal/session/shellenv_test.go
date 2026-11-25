@@ -19,7 +19,7 @@ func TestShellArgvManaged(t *testing.T) {
 	}{
 		{"/usr/bin/zsh", []string{"env", "ZDOTDIR=/data/zsh", "/usr/bin/zsh", "-l"}},
 		{"/usr/bin/fish", []string{"/usr/bin/fish", "-l", "-C", "source /data/fish/terminu.fish"}},
-		{"/usr/bin/bash", []string{"/usr/bin/bash", "--rcfile", "/data/bash/terminu.bash", "-l"}},
+		{"/usr/bin/bash", []string{"/usr/bin/bash", "--rcfile", "/data/bash/terminu.bash"}},
 		{"/bin/sh", []string{"/bin/sh", "-l"}}, // unknown shells stay plain
 	}
 	for _, c := range cases {

@@ -29,14 +29,39 @@ const fishScript = `# terminu managed init — sourced via fish -C (after user c
 fish_add_path $HOME/.local/bin $HOME/bin $HOME/.bun/bin
 command -q fzf; and fzf --fish | source
 command -q zoxide; and zoxide init fish | source
+
+# Inline-TUI preclear — devin's UI paints inline below the cursor (no
+# alt screen), leaving the prompt lines hanging above its block on a
+# shallow pane. ED(2)+CUP before exec puts the block flush at the top;
+# cleared lines still live in the session's server-side scrollback log.
+function __tu_preclear_inline_tui --on-event fish_preexec
+    string match -qr '(^|&&|\|\||;|\|)\s*(command |sudo |exec )*(\S*/)*devin(\s|;|\||&|$)' -- $argv
+        and printf '\033[H\033[2J'
+end
 `
 
-const bashScript = `# terminu managed rcfile — chain the user's layers, then augment
-[[ -f /etc/bash.bashrc ]] && source /etc/bash.bashrc
-[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"
+const bashScript = `# terminu managed rcfile — chain the user's layers, then augment.
+# bash --rcfile is only read by non-login interactive shells, so the
+# spawn drops -l; emulate the login chain here — profile files when
+# they exist (they chain ~/.bashrc themselves), else the interactive
+# rc chain, matching how the shell would have sourced them.
+if [[ -f /etc/profile || -f "$HOME/.bash_profile" || -f "$HOME/.bash_login" || -f "$HOME/.profile" ]]; then
+    [[ -f /etc/profile ]] && source /etc/profile
+    for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+        [[ -f $f ]] && { source "$f"; break; }
+    done
+else
+    [[ -f /etc/bash.bashrc ]] && source /etc/bash.bashrc
+    [[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"
+fi
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH";; esac
 command -v fzf >/dev/null 2>&1 && eval "$(fzf --bash 2>/dev/null)"
 command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init bash)"
+
+# Inline-TUI preclear — bash has no preexec, so wrap the launch path
+# directly; same effect as the zsh/fish hooks. devin paints its UI
+# inline (no alt screen) — ED(2) first puts its block at pane top.
+command -v devin >/dev/null 2>&1 && devin() { printf '\033[H\033[2J'; command devin "$@"; }
 `
 
 // Materialize writes the embedded/config trees under <dataDir> —

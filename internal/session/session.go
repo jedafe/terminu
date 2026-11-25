@@ -123,7 +123,11 @@ func (m *Manager) shellArgv(shell string) []string {
 		}
 	case "bash":
 		if m.env.BashFile != "" {
-			return []string{shell, "--rcfile", m.env.BashFile, "-l"}
+			// No -l: an interactive LOGIN bash never reads --rcfile
+			// (it reads profile files instead), so -l silently
+			// dropped the whole managed env. Non-login interactive
+			// honors it; the rcfile emulates the profile chain.
+			return []string{shell, "--rcfile", m.env.BashFile}
 		}
 	}
 	return []string{shell, "-l"}

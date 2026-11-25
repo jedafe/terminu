@@ -10,6 +10,20 @@ TU_ZSH_DIR=${ZDOTDIR}
 # Keep the clear, drop the marker.
 PROMPT_EOL_MARK=''
 
+# Inline-TUI preclear — `devin` paints its UI inline at the cursor (it
+# never takes the alt screen), so on a shallow pane its block hangs under
+# the prompt lines. ED(2)+CUP before exec puts the block flush at the
+# top — the same look a deep-scrollback terminal produces. The cleared
+# lines still live in the session's server-side scrollback log. Only
+# tools verified to render this way belong here; alt-screen tools
+# already cover the frame.
+tu_preclear_inline_tui() {
+    [[ "$3" =~ '(^|&&|\|\||;|\|)[[:space:]]*(command |sudo |exec )*([^[:space:]]*/)*devin([[:space:];|&]|$)' ]] \
+        && printf '\e[H\e[2J'
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook preexec tu_preclear_inline_tui
+
 # Vendored inside the binary — no packages required.
 [[ -f "$TU_ZSH_DIR/vendor/zsh-autosuggestions/zsh-autosuggestions.zsh" ]] \
     && source "$TU_ZSH_DIR/vendor/zsh-autosuggestions/zsh-autosuggestions.zsh"
