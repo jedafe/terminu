@@ -203,6 +203,7 @@
 						hint = null;
 						dragPid = (ev.target as HTMLElement).dataset.pid ?? null;
 						(ev.target as HTMLElement).classList.add('dnd-drag');
+						document.body.classList.add('dnd-live');
 					},
 					move(ev) {
 						gx += ev.dx;
@@ -216,6 +217,7 @@
 						const t = ev.target as HTMLElement;
 						t.style.transform = '';
 						t.classList.remove('dnd-drag');
+						document.body.classList.remove('dnd-live');
 						// Re-resolve at release coords; if nothing resolves,
 						// keep the last move's hint as the drop target.
 						const last = hint;
@@ -248,7 +250,15 @@
 				ev.interaction.start({ name: 'drag' }, ev.interactable, ev.currentTarget);
 			});
 
-		return () => grabs.unset();
+		// pointercancel (e.g. an OS gesture steal) may bypass 'end' —
+		// never let the grabbing cursor latch on.
+		const cancel = () => document.body.classList.remove('dnd-live');
+		window.addEventListener('pointercancel', cancel, true);
+
+		return () => {
+			grabs.unset();
+			window.removeEventListener('pointercancel', cancel, true);
+		};
 	}
 
 	function ptrDown(e: PointerEvent) {
@@ -1263,19 +1273,19 @@
 		border-color: #1c2634;
 		background: transparent;
 	}
-	/* Frame grab handle — the only drag source; sits top-right clear
-	   of the terminal's 12px scrollbar. */
+	/* Frame grab handle — the only drag source; sits bottom-right
+	   clear of the search icon and the 12px scrollbar. */
 	.fgrab {
 		position: absolute;
-		top: 6px;
+		bottom: 8px;
 		right: 18px;
 		z-index: 20;
-		padding: 4px 9px;
-		border-radius: 7px;
+		padding: 8px 12px;
+		border-radius: 9px;
 		background: #11161fcc;
 		border: 1px solid #22304a;
 		color: #3d5a80;
-		font-size: 12px;
+		font-size: 15px;
 		line-height: 1;
 		cursor: grab;
 		touch-action: none;
@@ -1286,6 +1296,13 @@
 	.fgrab:hover {
 		color: #4cc9f0;
 		border-color: #4cc9f0;
+	}
+	/* The drag ghost is pointer-events:none — the browser picks its
+	   cursor from whatever is under the pointer, so the grabbing palm
+	   has to live on body for the duration of the drag. */
+	:global(body.dnd-live),
+	:global(body.dnd-live *) {
+		cursor: grabbing !important;
 	}
 	.fgrab:active {
 		cursor: grabbing;
