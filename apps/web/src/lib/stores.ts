@@ -152,13 +152,14 @@ export function newPane(sessionId: string) {
 	// Fill the first empty grid slot, if any — pool order decides which
 	// waiting tab lands there.
 	grid.update((rows) => {
-		for (const row of rows)
-			for (const c of row.cells)
-				if (!c.paneId) {
-					c.paneId = p.id;
-					return rows;
+		const next = [...rows];
+		for (let r = 0; r < next.length; r++)
+			for (let c = 0; c < next[r].cells.length; c++)
+				if (!next[r].cells[c].paneId) {
+					setCell(next, r, c, p.id);
+					return next;
 				}
-		return rows;
+		return next;
 	});
 	activePane.set(p.id);
 	return p;
@@ -167,9 +168,11 @@ export function newPane(sessionId: string) {
 export function closePane(id: string) {
 	panes.update((ps) => ps.filter((p) => p.id !== id));
 	grid.update((rows) => {
-		for (const row of rows)
-			for (const c of row.cells) if (c.paneId === id) c.paneId = undefined;
-		return rows;
+		const next = [...rows];
+		for (let r = 0; r < next.length; r++)
+			for (let c = 0; c < next[r].cells.length; c++)
+				if (next[r].cells[c].paneId === id) setCell(next, r, c, undefined);
+		return next;
 	});
 	const ps = get(panes);
 	if (get(activePane) === id) activePane.set(ps[ps.length - 1]?.id ?? null);
@@ -203,11 +206,11 @@ export function swapPanes(a: string, b: string) {
 	grid.update((rows) => {
 		const pa = cellOf(rows, a);
 		const pb = cellOf(rows, b);
-		if (pa && pb) {
-			rows[pa.r].cells[pa.c].paneId = b;
-			rows[pb.r].cells[pb.c].paneId = a;
-		}
-		return rows;
+		if (!pa || !pb) return rows;
+		const next = [...rows];
+		setCell(next, pa.r, pa.c, b);
+		setCell(next, pb.r, pb.c, a);
+		return next;
 	});
 }
 
@@ -217,12 +220,13 @@ export function swapPanes(a: string, b: string) {
 export function assignCell(paneId: string, r: number, c: number) {
 	grid.update((rows) => {
 		if (!rows[r]?.cells[c]) return rows;
-		const src = cellOf(rows, paneId);
+		const next = [...rows];
+		const src = cellOf(next, paneId);
 		if (src && (src.r !== r || src.c !== c)) {
-			rows[src.r].cells[src.c].paneId = rows[r].cells[c].paneId;
+			setCell(next, src.r, src.c, next[r].cells[c].paneId);
 		}
-		rows[r].cells[c].paneId = paneId;
-		return rows;
+		setCell(next, r, c, paneId);
+		return next;
 	});
 }
 
@@ -230,6 +234,16 @@ export function assignCell(paneId: string, r: number, c: number) {
 export function cellPos(rows: GridRow[], paneId: string): string | null {
 	const at = cellOf(rows, paneId);
 	return at ? `${at.r}:${at.c}` : null;
+}
+
+// setCell writes a slot's occupant immutably — new row + cell objects,
+// since in-place mutation leaves Svelte's each/{@const} with stale
+// identities (the store changes but the cell body never re-renders).
+function setCell(rows: GridRow[], r: number, c: number, paneId: string | undefined) {
+	rows[r] = {
+		...rows[r],
+		cells: rows[r].cells.map((cell, i) => (i === c ? { ...cell, paneId } : cell))
+	};
 }
 
 // cellOf locates the slot a pane occupies, or null when it's pool-only.

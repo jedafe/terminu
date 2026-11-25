@@ -111,3 +111,22 @@ test('movePane reorders pool tabs without touching slots', () => {
 	movePane(c, 0);
 	expect(ids()).toEqual([c, a, b]);
 });
+
+// In-place cell mutation keeps object identity — Svelte then never
+// re-renders the changed frame. Occupant writes must produce fresh
+// row/cell objects (and leave untouched slots identical).
+test('occupant writes are immutable (fresh identities)', () => {
+	seed(3);
+	const [a, b, c] = ids();
+	applyPreset([2]);
+	const before = get(grid);
+	const cell00 = before[0].cells[0];
+	const cell01 = before[0].cells[1];
+	assignCell(c, 0, 0);
+	const after = get(grid);
+	expect(after).not.toBe(before);
+	expect(after[0]).not.toBe(before[0]);
+	expect(after[0].cells[0]).not.toBe(cell00);
+	expect(after[0].cells[1]).toBe(cell01); // untouched slot keeps identity
+	expect(after[0].cells[0].paneId).toBe(c);
+});
