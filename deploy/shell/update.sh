@@ -21,6 +21,27 @@ fi
 if [[ "${_UPDATE_SH_COPY:-}" == 1 ]]; then
 	trap 'rm -f "$0"' EXIT
 fi
+
+# Refuse when invoked inside a prod session: the restart ends every prod
+# terminu session including this one. The gate is update-dev.sh → verify
+# on dev.shell.japa.to → promote.sh; --force overrides for hotfixes.
+if [[ "${1:-}" != "--force" && "${1:-}" != "--no-restart" ]]; then
+	_p=$$
+	while [[ "$_p" -gt 1 ]]; do
+		_c=$(ps -o comm= -p "$_p" 2>/dev/null) || break
+		if [[ "$_c" == terminu-server ]]; then
+			echo "refusing: this shell is inside a prod terminu session —" >&2
+			echo "the restart ends every prod session, this one included." >&2
+			echo "gate: update-dev.sh → verify on dev.shell.japa.to → promote.sh" >&2
+			echo "      (run promote.sh from a dev session), or --force for hotfixes." >&2
+			exit 1
+		fi
+		_p=$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' ')
+	done
+	echo "warning: update.sh deploys directly to prod, bypassing the dev gate" >&2
+	echo "         (update-dev.sh → promote.sh is the standard flow)" >&2
+fi
+
 : "${REPO:?internal error — REPO unset}"
 DEPLOY="$(dirname "$REPO")" # e.g. /home/japa/terminu
 BIN="$DEPLOY/bin/terminu-server"
