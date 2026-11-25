@@ -618,7 +618,6 @@
 						<span class="pg">
 							{#each pre.shape as n}<span class="pgrow">{#each Array(n) as _}<i></i>{/each}</span>{/each}
 						</span>
-						<span class="pname">{pre.name}</span>
 					</button>
 				{/each}
 			</div>
@@ -1125,7 +1124,7 @@
 	.preset {
 		display: flex;
 		align-items: center;
-		gap: 7px;
+		justify-content: center;
 		border: 1px solid #1c2634;
 		border-radius: 8px;
 		background: #0d1117;
