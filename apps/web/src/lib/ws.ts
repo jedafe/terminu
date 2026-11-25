@@ -141,7 +141,11 @@ export class SessionClient {
 		this.closed = true;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		try {
-			this.ws?.send(JSON.stringify({ type: 'detach' }));
+			// send() on a CLOSING socket throws — and Chrome logs it to
+			// console even when the exception is caught. Gate on OPEN.
+			if (this.ws?.readyState === WebSocket.OPEN) {
+				this.ws.send(JSON.stringify({ type: 'detach' }));
+			}
 			this.ws?.close();
 		} catch {
 			/* already gone */
