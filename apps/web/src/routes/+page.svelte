@@ -874,7 +874,7 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 6px 8px;
+		padding: 6px 8px 0;
 		padding-top: calc(6px + env(safe-area-inset-top, 0px));
 		background: #0d1117;
 		border-bottom: 1px solid #1a2334;
@@ -883,6 +883,7 @@
 	.tb {
 		min-width: 44px;
 		height: 44px;
+		margin-bottom: 6px;
 		border: 1px solid #22304a;
 		border-radius: 9px;
 		background: #141b26;
@@ -895,6 +896,7 @@
 	.panes {
 		flex: 1;
 		display: flex;
+		align-items: flex-end;
 		gap: 4px;
 		overflow-x: auto;
 		overflow-x: overlay; /* float over tabs where supported — no gutter band */
@@ -915,19 +917,23 @@
 	.panes::-webkit-scrollbar-track {
 		background: transparent;
 	}
+	/* Flat underline tabs (japa.to/blog style) — no chip; the active
+	   tab's 2px accent bar rides on the topbar's baseline border. */
 	.pane-tab {
+		position: relative;
 		height: 44px;
 		display: flex;
 		align-items: center;
-		border: 1px solid #22304a;
-		border-radius: 9px;
-		background: #11161f;
+		margin-bottom: 1px;
+		border: 0;
+		background: transparent;
 		color: #6b7f9e;
-		font: 13px ui-monospace, monospace;
-		padding: 0 6px 0 14px;
+		font: 500 13px ui-monospace, monospace;
+		padding: 0 4px 0 14px;
 		white-space: nowrap;
 		flex-shrink: 0;
 		cursor: pointer;
+		transition: color 0.15s;
 		/* Horizontal swipes keep scrolling the strip; vertical moves
 		   stay ours so an armed drag can't be stolen. */
 		touch-action: pan-x;
@@ -935,14 +941,35 @@
 		-webkit-user-select: none;
 		-webkit-touch-callout: none;
 	}
+	.pane-tab:hover {
+		color: #9db2ce;
+	}
+	.pane-tab::after {
+		content: '';
+		position: absolute;
+		left: 10px;
+		right: 10px;
+		bottom: 0;
+		height: 2px;
+		border-radius: 999px;
+		background: transparent;
+		transition: background-color 0.15s;
+	}
 	.pane-tab.active {
-		background: #1c2a44;
-		border-color: #4cc9f0;
 		color: #e6f2ff;
 	}
-	/* On-grid marker — tabs occupying a window slot get a left edge. */
-	.pane-tab.ongrid {
-		box-shadow: inset 3px 0 0 #3d5a80;
+	.pane-tab.active::after {
+		background: #4cc9f0;
+	}
+	/* On-grid marker — a small square "frame" tick before the label. */
+	.pane-tab.ongrid::before {
+		content: '';
+		width: 5px;
+		height: 5px;
+		border-radius: 1.5px;
+		background: #3d5a80;
+		margin-right: 7px;
+		flex-shrink: 0;
 	}
 	.tabx {
 		border: 0;
