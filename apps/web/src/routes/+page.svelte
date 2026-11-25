@@ -80,6 +80,8 @@
 		{ name: '4', shape: [4] },
 		{ name: '1 ⁄ 1 ⁄ 1', shape: [1, 1, 1] }
 	];
+	// Portrait touch screens fit full-width stacks only — 1, 1⁄1, 1⁄1⁄1.
+	const MOBILE_PRESETS = PRESETS.filter((p) => p.shape.every((n) => n === 1));
 
 	// Pane resize + reorder: dividers redistribute a pair's weight,
 	// tab drags swap panes into grid slots. Both persist via scheduleSave.
@@ -605,7 +607,7 @@
 
 			<div class="ghead"><span>layout</span></div>
 			<div class="presets">
-				{#each PRESETS as pre (pre.name)}
+				{#each coarsePtr() ? MOBILE_PRESETS : PRESETS as pre (pre.name)}
 					{@const cur = $grid.map((r) => r.cells.length).join(',') === pre.shape.join(',')}
 					<button
 						class="preset"

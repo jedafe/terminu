@@ -30,6 +30,14 @@ fish_add_path $HOME/.local/bin $HOME/bin $HOME/.bun/bin
 command -q fzf; and fzf --fish | source
 command -q zoxide; and zoxide init fish | source
 
+# Managed prompt — two-line (user@host)-[~/cwd] over a bare $.
+function fish_prompt
+    set_color cyan
+    printf '(%s@%s)-[%s]' $USER (prompt_hostname) (prompt_pwd)
+    set_color normal
+    printf '\n$ '
+end
+
 # Inline-TUI preclear — devin's UI paints inline below the cursor (no
 # alt screen), leaving the prompt lines hanging above its block on a
 # shallow pane. ED(2)+CUP before exec puts the block flush at the top;
@@ -63,6 +71,9 @@ command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init bash)"
 # bash is not a login shell anymore (--rcfile needs interactive
 # non-login) — restore the muscle-memory builtin.
 logout() { builtin exit "$@"; }
+
+# Managed prompt — two-line (user@host)-[~/cwd] over a bare $.
+PS1='\[\e[36m\](\u@\h)-[\w]\[\e[0m\]\n$ '
 
 # Inline-TUI preclear — bash has no preexec, so the DEBUG trap evaluates
 # each simple command before it runs; $BASH_COMMAND is the post-alias,

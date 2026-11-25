@@ -10,6 +10,9 @@ TU_ZSH_DIR=${ZDOTDIR}
 # Keep the clear, drop the marker.
 PROMPT_EOL_MARK=''
 
+# Managed prompt — two-line (user@host)-[~/cwd] over a bare $.
+PROMPT=$'%F{cyan}(%n@%m)-[%~]%f\n%(!.#.$) '
+
 # Inline-TUI preclear — `devin` paints its UI inline at the cursor (it
 # never takes the alt screen), so on a shallow pane its block hangs under
 # the prompt lines. ED(2)+CUP before exec puts the block flush at the

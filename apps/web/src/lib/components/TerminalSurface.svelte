@@ -231,6 +231,18 @@
 
 	function fireSelMouse(type: 'mousedown' | 'mousemove' | 'mouseup', x: number, y: number) {
 		const scr = el.querySelector('.xterm-screen') ?? el;
+		// Edge dead-zone: xterm auto-scrolls whenever the pointer sits
+		// outside the canvas — even 1px — and snaps the selection to
+		// full line width. On touch that's where precise edge-row
+		// selection dies. Report the finger as pinned to the edge for
+		// one row-height outside the bounds; past that, the real offset
+		// carries through and edge-scroll engages normally.
+		if (type !== 'mouseup' && term) {
+			const r = scr.getBoundingClientRect();
+			const dead = r.height / Math.max(1, term.rows);
+			if (y > r.bottom && y <= r.bottom + dead) y = r.bottom;
+			else if (y < r.top && y >= r.top - dead) y = r.top;
+		}
 		const ev = new MouseEvent(type, {
 			bubbles: true,
 			cancelable: true,
