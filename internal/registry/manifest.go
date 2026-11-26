@@ -187,7 +187,7 @@ func (m *Manifest) Validate() error {
 }
 
 // coerce renders one param value as its argv string form — load-time
-// validation for declared defaults and the cheat-sheet's param display.
+// validation for declared defaults.
 func coerce(p Parameter, raw any) (string, error) {
 	switch p.Type {
 	case "boolean":

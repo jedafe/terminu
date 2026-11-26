@@ -345,7 +345,7 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 
 // agentPrompt is the catalog's fetch path for the current detection —
 // session-socket attaches resync it too, but a list row shouldn't need
-// a full PTY attach to render its buttons.
+// a full PTY attach to render its prompt card.
 func (s *Server) agentPrompt(w http.ResponseWriter, r *http.Request) {
 	sess, err := s.mgr.Attach(r.PathValue("id"))
 	if err != nil {

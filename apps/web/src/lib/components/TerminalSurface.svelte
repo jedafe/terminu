@@ -156,6 +156,7 @@
 			eof: (code) => {
 				status = 'dead';
 				dead = true;
+				prompt = null; // no card over an exited session
 				term.write(`\r\n\x1b[2m[process exited ${code}] — close or restart from the session list\x1b[0m\r\n`);
 			},
 			error: (code, msg) => {

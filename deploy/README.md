@@ -60,6 +60,9 @@ interface behind a TLS terminator (Caddy), never a public one.
 
 ## server — container
 
+> Image pipeline lands in Phase 04 — the invocation below is the §12
+> target, documented ahead of the `terminu/terminu` image existing.
+
 ```sh
 docker run -d --name terminu \
   -e TU_SESSION_SECRET=<random> \

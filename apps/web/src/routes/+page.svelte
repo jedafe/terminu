@@ -19,6 +19,7 @@
 		drawerOpen,
 		orderedSessions,
 		agentStates,
+		LIVE_STATES,
 		alerts,
 		refreshAlerts,
 		ackAlert,
@@ -383,16 +384,19 @@
 	});
 
 	function isLive(s: Session) {
-		return ['starting', 'working', 'waiting-for-input', 'undetectable', 'detached'].includes(s.state);
+		return LIVE_STATES.has(s.state);
 	}
 	function isFinished(s: Session) {
 		return !isLive(s);
 	}
 	// §05: a low-confidence wait ("may be waiting") is never promoted to
-	// the needs-you rank — AGENTS.md: unknown shows the hint only.
+	// the needs-you rank — AGENTS.md: unknown shows the hint only. And a
+	// finished session is never "needs you": its agent state freezes at
+	// the last detection, which may still read waiting-for-input.
 	function needsYouId(id: string) {
 		const a = $agentStates[id];
-		return a?.state === 'waiting-for-input' && a.confidence !== 'low';
+		const s = sessionOf(id);
+		return !!s && isLive(s) && a?.state === 'waiting-for-input' && a.confidence !== 'low';
 	}
 	function needsYou(s: Session) {
 		return needsYouId(s.id);
@@ -412,11 +416,13 @@
 	// terminal state + when it ended; live → foreground process/state.
 	function subLabel(s: Session) {
 		const a = $agentStates[s.id];
-		if (needsYou(s)) return `waiting ${fmtAgo(a?.since)}`;
+		// Lifecycle beats detection: a session that exited while waiting
+		// shows its terminal state, not a stale "waiting".
 		if (isFinished(s)) {
 			const ago = fmtAgo(s.ended_at);
 			return s.state + (ago ? ` ${ago}` : '');
 		}
+		if (needsYou(s)) return `waiting ${fmtAgo(a?.since)}`;
 		// A low-confidence wait is only ever a hint — "may be waiting",
 		// never the confident "waiting <t>" phrasing (session-state
 		// catalog: unknown carries no options).

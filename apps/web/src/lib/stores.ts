@@ -31,13 +31,22 @@ export async function ackAlert(id: number) {
 	alerts.update((list) => list.filter((a) => a.id !== id));
 }
 
+// Lifecycle states that can still act — anything else is finished.
+// Shared by the isLive checks in +page.svelte and the ordering below so
+// the two never drift.
+export const LIVE_STATES = new Set([
+	'starting', 'working', 'waiting-for-input', 'undetectable', 'detached'
+]);
+
 // §05 ordering: waiting-for-input (high conf, then oldest wait), then
 // working-ish, then done/error recent — mirrors the server's Agents().
 // Low-confidence waits demote out of the top rank ("may be waiting"
-// never needs-you — AGENTS.md).
+// never needs-you — AGENTS.md). Lifecycle beats detection: a finished
+// session's agent state is frozen at last detection — it can't rank 0.
 export const orderedSessions = derived([sessions, agentStates], ([$s, $a]) => {
 	const conf = (c?: string) => (c === 'high' ? 0 : c === 'medium' ? 1 : 2);
 	const rank = (s: Session) => {
+		if (!LIVE_STATES.has(s.state)) return 2;
 		const st = $a[s.id]?.state ?? s.state;
 		if (st === 'waiting-for-input' && $a[s.id]?.confidence !== 'low') return 0;
 		if (st === 'done' || st === 'error' || st === 'ended') return 2;
