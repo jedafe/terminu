@@ -52,7 +52,10 @@
 			sel = 0;
 			err = '';
 		} catch {
-			if (my === seq) rows = [];
+			if (my === seq) {
+				rows = [];
+				err = 'search failed';
+			}
 		}
 	}
 	function onQ() {
@@ -77,6 +80,7 @@
 			e.preventDefault();
 			const c = rows[sel];
 			if (c) void pick(c);
+			else if (canDiscover && !discBusy) void discover();
 		} else if (phase === 'params' && e.key === 'Enter') {
 			e.preventDefault();
 			void submitParams();
@@ -103,6 +107,7 @@
 	// pick → detail → params form (if the manifest declares any) or the
 	// confirm/run path.
 	async function pick(c: CommandSummary) {
+		if (busy) return;
 		busy = true;
 		err = '';
 		try {
@@ -146,7 +151,7 @@
 		const out: Record<string, unknown> = {};
 		for (const p of manifest?.parameters ?? []) {
 			const v = values[p.name];
-			if (v === undefined || v === '') continue;
+			if (v == null || v === '') continue;
 			out[p.name] = v;
 		}
 		return out;
@@ -159,15 +164,16 @@
 	function previewArgv(m: CommandManifest): string[] {
 		const out = [m.command.executable];
 		for (const a of m.command.arguments) {
-			out.push(
-				a.replace(/\{([a-zA-Z0-9_.]+)\}/g, (r, name) =>
-					values[name] !== undefined && values[name] !== '' ? String(values[name]) : r
-				)
-			);
+			const v = a.replace(/\{([a-zA-Z0-9_.]+)\}/g, (r, name) => {
+				if (name.startsWith('session.')) return r; // server-side context
+				const val = values[name.split('.')[0]];
+				return val !== undefined && val !== null && val !== '' ? String(val) : '';
+			});
+			if (v !== '') out.push(v); // absent optional → element drops (mirrors Build)
 		}
 		for (const p of m.parameters ?? []) {
 			const v = values[p.name];
-			if (!p.flag || v === undefined || v === '' || v === false) continue;
+			if (!p.flag || v === undefined || v === null || v === '' || v === false) continue;
 			out.push(p.flag);
 			if (v !== true) out.push(String(v));
 		}
@@ -176,16 +182,17 @@
 
 	const missing = $derived(
 		(manifest?.parameters ?? []).some(
-			(p) => p.required && (values[p.name] === undefined || values[p.name] === '')
+			(p) => p.required && (values[p.name] == null || values[p.name] === '')
 		)
 	);
 
 	async function submitParams() {
-		if (!manifest || missing) return;
+		if (!manifest || missing || busy) return;
 		await stage(manifest);
 	}
 
 	async function run(m: CommandManifest) {
+		if (busy) return; // a held Enter must not spawn twice
 		busy = true;
 		err = '';
 		try {
@@ -219,6 +226,7 @@
 		/^[a-z0-9][a-z0-9_.-]*$/.test(q) && !rows.some((r) => r.application === q)
 	);
 	async function discover() {
+		if (discBusy) return;
 		const exe = q;
 		discBusy = true;
 		err = '';
@@ -238,6 +246,9 @@
 	onMount(() => {
 		void search();
 		void tick().then(() => inputEl?.focus());
+		return () => {
+			if (debounce) clearTimeout(debounce);
+		};
 	});
 </script>
 

@@ -45,8 +45,11 @@ func summaryOf(m *registry.Manifest, ctx bool) commandSummary {
 func (s *Server) listCommands(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 || limit > 200 {
+	if limit <= 0 {
 		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
 	}
 	ctxIDs := map[string]bool{}
 	if sid := r.URL.Query().Get("session_id"); sid != "" {

@@ -141,6 +141,14 @@ func (m *Manifest) Validate() error {
 		if p.Type == "resource" && p.Resource == "" {
 			return fmt.Errorf("%w: %s: param %q resource needs a provider id", ErrInvalidManifest, m.ID, p.Name)
 		}
+		// A declared default must coerce — an enum default outside
+		// options is a schema bug that should fail at load, not at
+		// execute when the param is left blank.
+		if p.Default != nil {
+			if _, err := coerce(p, p.Default); err != nil {
+				return fmt.Errorf("%w: %s: param %q default: %v", ErrInvalidManifest, m.ID, p.Name, err)
+			}
+		}
 		params[p.Name] = true
 	}
 	// Every template ref must bind to a declared param or a session.*
