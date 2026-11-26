@@ -12,6 +12,7 @@
 		type CommandSummary,
 		type ContextResult
 	} from '$lib/api';
+	import { agentStates } from '$lib/stores';
 
 	let {
 		sessionId = '',
@@ -55,6 +56,21 @@
 	$effect(() => {
 		if (sessionId !== lastCtx) {
 			lastCtx = sessionId;
+			void loadContext(sessionId);
+		}
+	});
+	// Live rebinding — a tool or fg proc launched while the view is
+	// open refetches ctx, so the header never shows a stale binding.
+	$effect(() => {
+		const a = sessionId ? $agentStates[sessionId] : undefined;
+		const liveTool = a?.tool ?? '';
+		const liveProc = a?.process ?? '';
+		if (
+			sessionId &&
+			ctx &&
+			((liveTool && liveTool !== ctx.tool) ||
+				(liveProc && !ctx.processes?.includes(liveProc)))
+		) {
 			void loadContext(sessionId);
 		}
 	});
@@ -176,11 +192,26 @@
 	}
 	async function copyArgv() {
 		if (!manifest) return;
+		const text = argvText(manifest);
 		try {
-			await navigator.clipboard.writeText(argvText(manifest));
+			if (navigator.clipboard) {
+				await navigator.clipboard.writeText(text);
+			} else {
+				// navigator.clipboard needs a secure context — http:// LAN
+				// sessions take the legacy selection path.
+				const ta = document.createElement('textarea');
+				ta.value = text;
+				ta.style.position = 'fixed';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.select();
+				const ok = document.execCommand('copy');
+				ta.remove();
+				if (!ok) throw new Error('execCommand failed');
+			}
 			copied = true;
 		} catch {
-			err = 'copy failed — clipboard permission denied';
+			err = 'copy failed — clipboard unavailable';
 		}
 	}
 

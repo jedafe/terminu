@@ -521,6 +521,14 @@
 		const existing = $panes.find((p) => p.sessionId === s.id);
 		if (existing) {
 			activePane.set(existing.id);
+			// A pool-only pane is invisible until slotted — open drops it
+			// into the armed cell (occupant swaps back to the pool); a
+			// stale armed key (grid shrank since) falls back to cell 0:0.
+			if (!cellPos($grid, existing.id)) {
+				const [r, c] = (armedCell ?? '0:0').split(':').map(Number);
+				if ($grid[r]?.cells[c]) assignCell(existing.id, r, c);
+				else assignCell(existing.id, 0, 0);
+			}
 		} else {
 			newPane(s.id);
 		}
@@ -543,6 +551,9 @@
 	async function purgeLog(id: string, e: Event) {
 		e.stopPropagation();
 		await api.clearLog(id);
+		// The armed session's detail rows derive from the log — refresh
+		// so the right panel doesn't show pre-purge timestamps.
+		await refreshSessions();
 	}
 
 	// DELETE /api/sessions — clear all finished rows + their logs at once.
@@ -1008,7 +1019,8 @@
 	@media (max-width: 899.5px) {
 		.panel {
 			position: fixed;
-			top: calc(50px + env(safe-area-inset-top, 0px));
+			/* topbar = 6 pad + 44 btn + 6 margin + 1 border = 57px */
+			top: calc(57px + env(safe-area-inset-top, 0px));
 			bottom: 0;
 			width: min(85vw, 360px);
 			z-index: 21;
@@ -1028,7 +1040,7 @@
 	}
 	.dshade {
 		position: fixed;
-		top: calc(50px + env(safe-area-inset-top, 0px));
+		top: calc(57px + env(safe-area-inset-top, 0px));
 		left: 0;
 		right: 0;
 		bottom: 0;

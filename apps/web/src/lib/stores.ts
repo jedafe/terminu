@@ -465,7 +465,11 @@ export async function restoreWorkspace() {
 			// saved names (p4, p9…) so counting entries undershoots and
 			// the next newPane re-mints a live id (each_key_duplicate).
 			paneSeq = restored.reduce((m, p) => Math.max(m, parseInt(p.id.slice(1), 10) || 0), 0);
-			activePane.set(layout.active ?? restored[0].id);
+			// A saved active id pointing at a filtered-out pane (dead
+			// session, dup) leaves a ghost activePane — fall back.
+			activePane.set(
+				restored.some((p) => p.id === layout.active) ? layout.active! : restored[0].id
+			);
 			// Grid: validate saved slots; migrate pre-grid layouts (flat
 			// pane list with `size`) into a single side-by-side row.
 			const ids = new Set(restored.map((p) => p.id));
