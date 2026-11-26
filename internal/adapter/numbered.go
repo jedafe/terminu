@@ -52,7 +52,9 @@ func numberedOptions(s *screen.Screen, rows []int, keyHint bool) []PromptOption 
 		m := numberedOpt.FindStringSubmatch(s.RowText(y))
 		o := PromptOption{Label: strings.TrimSpace(m[0]), Hint: arrowHint(i)}
 		if keyHint {
-			o.Hint = string(m[1][0])
+			// Full digits — "10" must show 10, not 1 (pressing 1 picks
+			// row 1, a different answer).
+			o.Hint = m[1]
 		}
 		opts[i] = o
 	}
