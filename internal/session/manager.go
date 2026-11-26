@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -54,6 +55,11 @@ var ErrNotFound = errors.New("session not found")
 var ErrLimit = errors.New("session limit reached")
 var ErrStillLive = errors.New("session still live — terminate before delete")
 
+// ErrExecutable marks a spawn whose binary can't resolve locally — a
+// caller-fixable problem (400), not an internal one. It wraps the binary
+// name so the client can say what was missing.
+var ErrExecutable = errors.New("executable not found")
+
 // Sink-side caps every spawn route shares — the HTTP layer rejects
 // oversize dims, internal callers (execute/launch) clamp here. cols×rows
 // cells + scrollback are per-session memory; the winsize field is uint16.
@@ -74,6 +80,21 @@ func NewManager(cfg *config.Config, q *gen.Queries, bus *EventBus) *Manager {
 // Recover marks rows that were live before restart as ended.
 func (m *Manager) Recover(ctx context.Context) error {
 	return m.q.MarkLiveSessionsEnded(ctx)
+}
+
+// resolvesLocally reports whether spawned binaries resolve on this
+// daemon's PATH — true for container mode and host mode running as the
+// target user; false for sudo-into-another-user and nsenter (the binary
+// lives in the remote env — LookPath here would falsely reject it).
+func (m *Manager) resolvesLocally() bool {
+	switch m.cfg.LocalTargetMode {
+	case "nsenter":
+		return false
+	case "host":
+		u := m.cfg.HostUser
+		return u == "" || u == currentUser()
+	}
+	return true // container
 }
 
 // Spawn creates the DB row then the PTY. Called only via broker.Execute.
@@ -109,6 +130,19 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	envPairs, err := envOverlay(req.Env)
 	if err != nil {
 		return nil, err
+	}
+	// When the child execs on this daemon's PATH the missing-binary case
+	// is knowable up front: fail before the session row exists so a bad
+	// profile/argv answers 400 instead of a dead `error` row + 500.
+	// Sudo/nsenter targets resolve in the remote env — skip the check.
+	if m.resolvesLocally() {
+		bin := shell
+		if len(cmdArgv) > 0 {
+			bin = cmdArgv[0]
+		}
+		if _, err := exec.LookPath(bin); err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrExecutable, bin)
+		}
 	}
 	cols, rows := req.Cols, req.Rows
 	if cols <= 0 {

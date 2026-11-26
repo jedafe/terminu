@@ -320,6 +320,10 @@ func (s *Server) spawnSession(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 409, "session_limit", "session limit reached")
 			return
 		}
+		if errors.Is(err, session.ErrExecutable) {
+			writeErr(w, 400, "bad_request", err.Error())
+			return
+		}
 		s.internalErr(w, err)
 		return
 	}
