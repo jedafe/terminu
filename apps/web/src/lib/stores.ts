@@ -86,10 +86,6 @@ export async function refreshProfiles() {
 	profiles.set(await api.profiles().catch(() => []));
 }
 
-// §04 command palette — open state lives in a store so both the ⌘K
-// keybinding and the topbar button drive the same component.
-export const paletteOpen = writable<boolean>(false);
-
 // Pane layout — each pane is a view onto one session id. The pool is
 // every open tab; the grid is a fixed preset of slots that panes are
 // assigned into. Slot weights (cell.size = width share, row.size =
@@ -118,7 +114,6 @@ export const onGrid = derived(grid, (g) => {
 export const activePane = writable<string | null>(null);
 export const workspaces = writable<Workspace[]>([]);
 export const activeWorkspace = writable<number>(1);
-export const drawerOpen = writable<boolean>(false);
 
 // Side panels (§11): docked resizable columns ≥900px, overlay drawers
 // below. Widths + open state persist inside the workspace layout.

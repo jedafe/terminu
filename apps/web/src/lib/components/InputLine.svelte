@@ -48,7 +48,7 @@
 		// pull focus back when it falls to the page/terminal itself.
 		if (el && el !== document.body) {
 			if (
-				el.closest('.drawer, .topbar') ||
+				el.closest('.panel, .topbar') ||
 				el.matches(
 					'input:not(.xterm-helper-textarea), textarea:not(.xterm-helper-textarea), [contenteditable="true"], button, a[href], select, [role="button"]'
 				)
@@ -72,7 +72,7 @@
 			const t = e.target as HTMLElement | null;
 			if (
 				t?.closest(
-					'button, a[href], input, textarea, select, [role="button"], .keybar, .drawer, .tools, .poverlay, .topbar'
+					'button, a[href], input, textarea, select, [role="button"], .keybar, .panel, .tools, .poverlay, .topbar'
 				)
 			)
 				return;

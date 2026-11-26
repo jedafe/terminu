@@ -2,9 +2,10 @@
      session drawer + pane grid + key bar. Panes are views over
      server-owned sessions — closing one never kills the process. -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
 	import interact from 'interactjs';
-	import { api, ApiError, type Session } from '$lib/api';
+	import { api, type Session } from '$lib/api';
 	import {
 		sessions,
 		panes,
@@ -16,13 +17,8 @@
 		saveWorkspace,
 		restoreWorkspace,
 		wireEvents,
-		drawerOpen,
 		orderedSessions,
-		agentStates,
-		LIVE_STATES,
-		alerts,
 		refreshAlerts,
-		ackAlert,
 		grid,
 		onGrid,
 		assignCell,
@@ -30,28 +26,20 @@
 		applyPreset,
 		sizeCellPair,
 		sizeRowPair,
-		paletteOpen,
-		profiles,
-		refreshProfiles
+		panels,
+		togglePanel,
+		setPanelWidth,
+		resetPanelWidth,
+		toggleCommands,
+		prompts,
+		wideLayout
 	} from '$lib/stores';
-	import {
-		isLive,
-		isFinished,
-		needsYouId,
-		needsYou,
-		fmtAgo,
-		subLabel,
-		detachedOf,
-		toolBadge,
-		pinUnv,
-		label,
-		tabLabel,
-		sessionOf
-	} from '$lib/sessionfmt';
+	import { isLive, isFinished, needsYouId, pinUnv, tabLabel } from '$lib/sessionfmt';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
 	import InputLine from '$lib/components/InputLine.svelte';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import LeftPanel from '$lib/components/LeftPanel.svelte';
+	import RightPanel from '$lib/components/RightPanel.svelte';
 
 	let surfaces: Record<string, TerminalSurface | undefined> = {};
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -82,24 +70,6 @@
 	let pull = $state(0);
 	let ptrBusy = $state(false);
 	let shellEl: HTMLDivElement;
-
-	// Layout presets — the grid is a fixed arrangement of slots (≤4);
-	// pool tabs swap in/out of slots without changing the shape.
-	const PRESETS: { name: string; shape: number[] }[] = [
-		{ name: '1', shape: [1] },
-		{ name: '1 | 1', shape: [2] },
-		{ name: '1 ⁄ 1', shape: [1, 1] },
-		{ name: '1 ⁄ 2', shape: [1, 2] },
-		{ name: '2 ⁄ 1', shape: [2, 1] },
-		{ name: '2 × 2', shape: [2, 2] },
-		{ name: '3', shape: [3] },
-		{ name: '1 ⁄ 3', shape: [1, 3] },
-		{ name: '3 ⁄ 1', shape: [3, 1] },
-		{ name: '4', shape: [4] },
-		{ name: '1 ⁄ 1 ⁄ 1', shape: [1, 1, 1] }
-	];
-	// Portrait touch screens fit full-width stacks only — 1, 1⁄1, 1⁄1⁄1.
-	const MOBILE_PRESETS = PRESETS.filter((p) => p.shape.every((n) => n === 1));
 
 	// Pane resize + reorder: dividers redistribute a pair's weight,
 	// tab drags swap panes into grid slots. Both persist via scheduleSave.
@@ -364,15 +334,17 @@
 		};
 		shellEl.addEventListener('touchmove', guard, { passive: false });
 		const cleanupDnd = initDnd();
-		// ⌘K / Ctrl-K toggles the command palette from anywhere — same
-		// surface as the topbar ⌘ button.
+		// ⌘K / Ctrl-K toggles the commands view in the right panel —
+		// same surface as the topbar ⌘ button.
 		const pal = (e: KeyboardEvent) => {
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 				e.preventDefault();
-				paletteOpen.update((v) => !v);
+				toggleCommands();
 			}
 		};
 		window.addEventListener('keydown', pal);
+		const syncWide = () => (wide = wideLayout());
+		window.addEventListener('resize', syncWide);
 		const clock = setInterval(() => (now = Date.now()), 15000);
 		void (async () => {
 			await refreshSessions();
@@ -383,13 +355,14 @@
 			if ($panes.length === 0) {
 				const live = $sessions.find((s) => isLive(s));
 				if (live) newPane(live.id);
-				else await spawn();
+				else await spawn().catch(() => {});
 			}
 		})();
 		return () => {
 			clearInterval(clock);
 			cleanupDnd();
 			window.removeEventListener('keydown', pal);
+			window.removeEventListener('resize', syncWide);
 			shellEl.removeEventListener('touchmove', guard);
 			vv?.removeEventListener('resize', syncVV);
 			vv?.removeEventListener('scroll', syncVV);
@@ -401,53 +374,70 @@
 		saveTimer = setTimeout(() => void saveWorkspace(), 1200);
 	}
 
-	let shellPick = $state(false);
-	let pickX = $state(0);
-	let pickY = $state(0);
-	let pickEl: HTMLDivElement | undefined = $state();
-	// §05 launch-profile form state — inline in the +new menu.
-	let profForm = $state(false);
-	let pName = $state('');
-	let pArgv = $state('');
-	let pCwd = $state('');
-	let pErr = $state('');
-	function toggleShellPick(e: MouseEvent) {
-		if (shellPick) {
-			shellPick = false;
-			profForm = false;
-			return;
-		}
-		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		pickX = Math.min(r.left, innerWidth - 200);
-		// Menu height is content-dependent (profiles group) — measure
-		// after render, then flip above the trigger if it clips.
-		pickY = r.bottom + 6;
-		shellPick = true;
-		profForm = false;
-		// Profiles land async and grow the menu — re-flip once they're in.
-		void refreshProfiles().then(() => tick()).then(() => flipPick(r));
-		void tick().then(() => flipPick(r));
+	// ≥900px the panels dock as resizable columns; below that they're
+	// overlay drawers — `wide` tracks the breakpoint for row-click and
+	// openNew behavior (CSS handles the actual positioning).
+	let wide = $state(wideLayout());
+	// Bound into LeftPanel — the +new block expands when the topbar
+	// "+" or empty-grid "open a session" lands here.
+	let lpNew = $state(false);
+	function openNew() {
+		panels.update((p) => ({
+			left: { ...p.left, open: true },
+			right: wide ? p.right : { ...p.right, open: false }
+		}));
+		lpNew = true;
 	}
-	// Flip the +new menu above its trigger when it would clip the bottom.
-	function flipPick(r: DOMRect) {
-		if (!pickEl) return;
-		const h = pickEl.offsetHeight;
-		if (r.bottom + 6 + h > innerHeight) pickY = Math.max(6, r.top - h - 6);
+	// Overlay-mode helpers: a session row tap dismisses the drawer it
+	// came from; the backdrop dismisses whichever panel is up.
+	function closeLeftOverlay() {
+		if (!wide) panels.update((p) => ({ ...p, left: { ...p.left, open: false } }));
+	}
+	function closeBoth() {
+		panels.update((p) => ({
+			left: { ...p.left, open: false },
+			right: { ...p.right, open: false }
+		}));
+	}
+	function closeRight() {
+		panels.update((p) => ({ ...p, right: { ...p.right, open: false } }));
+	}
+
+	// Panel edge drag — same idiom as pairDrag: clamped px width, a
+	// tap without drag resets to the default.
+	function panelDrag(e: PointerEvent, side: 'left' | 'right') {
+		if (e.button !== 0 || !wideLayout()) return;
+		e.preventDefault();
+		const d = e.currentTarget as HTMLElement;
+		try {
+			d.setPointerCapture(e.pointerId);
+		} catch {
+			// synthetic/stale pointer — capture is a nicety, not a requirement
+		}
+		const startX = e.clientX;
+		const startW = get(panels)[side].w;
+		const sign = side === 'left' ? 1 : -1;
+		let moved = false;
+		const move = (ev: PointerEvent) => {
+			const w = startW + sign * (ev.clientX - startX);
+			if (!moved && Math.abs(w - startW) > 4) moved = true;
+			if (moved) setPanelWidth(side, w);
+		};
+		const up = () => {
+			d.removeEventListener('pointermove', move);
+			d.removeEventListener('pointerup', up);
+			d.removeEventListener('pointercancel', up);
+			if (!moved) resetPanelWidth(side);
+			scheduleSave();
+		};
+		d.addEventListener('pointermove', move);
+		d.addEventListener('pointerup', up);
+		d.addEventListener('pointercancel', up);
 	}
 
 	async function spawn(shell?: string) {
-		pErr = '';
-		try {
-			const s = await api.spawn({ cols: 120, rows: 30, shell });
-			shellPick = false;
-			await refreshSessions().catch(() => {});
-			newPane(s.id);
-			scheduleSave();
-		} catch (e) {
-			// Menu stays open with the failure visible — also guards the
-			// boot auto-spawn path against an unhandled rejection.
-			pErr = e instanceof ApiError ? e.message : 'spawn failed';
-		}
+		const s = await api.spawn({ cols: 120, rows: 30, shell });
+		await spawned(s);
 	}
 
 	// Shared spawn landing — profile launches arrive as a fresh session
@@ -460,56 +450,28 @@
 		scheduleSave();
 	}
 
-	async function launchProf(id: number, resume = false) {
-		pErr = '';
-		try {
-			const res = await api.launchProfile(id, { resume, cols: 120, rows: 30 });
-			shellPick = false;
-			await spawned(res.session);
-		} catch (e) {
-			// Menu stays open with the failure visible in .merr.
-			pErr = e instanceof ApiError ? e.message : 'launch failed';
-		}
+	// Spawn/launch rejections surface in the left panel's +new block —
+	// these are the onspawn/onlaunch bodies, errors must propagate.
+	function onspawn(shell?: string) {
+		return spawn(shell);
+	}
+	function onlaunch(id: number, o?: { variant?: string; resume?: boolean }) {
+		return launchProf(id, o?.resume, o?.variant);
 	}
 
-	async function saveProfile() {
-		pErr = '';
-		const argv = pArgv.trim().split(/\s+/).filter(Boolean);
-		try {
-			await api.createProfile({
-				name: pName.trim(),
-				argv,
-				cwd: pCwd.trim() || undefined
-			});
-			pName = '';
-			pArgv = '';
-			pCwd = '';
-			profForm = false;
-			await refreshProfiles();
-		} catch (e) {
-			pErr = e instanceof ApiError ? e.message : 'save failed';
-		}
+	async function launchProf(id: number, resume = false, variant?: string) {
+		const res = await api.launchProfile(id, { resume, variant, cols: 120, rows: 30 });
+		await spawned(res.session);
 	}
 
-	async function delProfile(id: number, e: Event) {
-		e.stopPropagation();
-		pErr = '';
-		try {
-			await api.deleteProfile(id);
-			await refreshProfiles();
-		} catch (err) {
-			pErr = err instanceof ApiError ? err.message : 'delete failed';
-		}
-	}
-
-	function openSession(s: Session) {
+	function onopen(s: Session) {
 		const existing = $panes.find((p) => p.sessionId === s.id);
 		if (existing) {
 			activePane.set(existing.id);
 		} else {
 			newPane(s.id);
 		}
-		drawerOpen.set(false);
+		closeLeftOverlay();
 		scheduleSave();
 	}
 
@@ -540,6 +502,20 @@
 		}
 		await refreshSessions();
 		await refreshAgents().catch(() => {});
+	}
+
+	function onend(id: string, e: Event) {
+		return endOrDelete(id, e);
+	}
+	function onpurge(id: string, e: Event) {
+		return purgeLog(id, e);
+	}
+	function onclearfin(e: Event) {
+		return clearFinished(e);
+	}
+	function onpreset(shape: number[]) {
+		applyPreset(shape);
+		scheduleSave();
 	}
 
 	function inject(seq: string) {
@@ -580,9 +556,9 @@
 			{ptrBusy ? 'refreshing…' : pull >= PTR_TRIP ? 'release to refresh' : '↓ pull to refresh'}
 		</div>
 	{/if}
-	<!-- top bar: sessions drawer + panes + mode toggle -->
+	<!-- top bar: left panel toggle + panes + right toggles -->
 	<header class="topbar">
-		<button class="tb" aria-label="sessions" onclick={() => drawerOpen.update((v) => !v)}>
+		<button class="tb" aria-label="sessions panel" onclick={() => togglePanel('left')}>
 			☰
 		</button>
 		<div class="panes">
@@ -624,124 +600,40 @@
 					>
 				</div>
 			{/each}
-			<button class="tb add" aria-label="new session" onclick={toggleShellPick}>+</button>
-			<button class="tb" aria-label="command palette" title="command palette (⌘K)" onclick={() => paletteOpen.set(true)}>⌘</button>
+			<button class="tb add" aria-label="new session" onclick={openNew}>+</button>
+			<button class="tb" aria-label="commands" title="commands (⌘K)" onclick={toggleCommands}>⌘</button>
 		</div>
+		<button class="tb" aria-label="info panel" onclick={() => togglePanel('right')}>◧</button>
 	</header>
 
-	{#if shellPick}
+	<!-- overlay-mode scrim — docked panels never need one; drawers get
+	     a tap-outside dismiss under the same z-order the panels use. -->
+	{#if !wide && ($panels.left.open || $panels.right.open)}
 		<!-- svelte-ignore a11y_no_static_element_interactions — backdrop only -->
-		<div class="shade" onpointerdown={() => (shellPick = false)} oncontextmenu={(e) => e.preventDefault()}></div>
-		<div class="shellpick" bind:this={pickEl} style:left="{pickX}px" style:top="{pickY}px" role="menu">
-			<div class="mgrp">shell</div>
-			<button class="cx" role="menuitem" onclick={() => spawn('/bin/bash')}>bash</button>
-			<button class="cx" role="menuitem" onclick={() => spawn('/bin/zsh')}>zsh</button>
-			<button class="cx" role="menuitem" onclick={() => spawn('/bin/fish')}>fish</button>
-			<div class="mgrp">agents</div>
-			{#each $profiles as pr (pr.id)}
-				<div class="mrow">
-					<button class="cx" role="menuitem" onclick={() => void launchProf(pr.id)}>
-						{pr.name}
-						<span class="marg">{pr.argv.join(' ')}</span>
-					</button>
-					{#if pr.resume_cmd?.length}
-						<button class="cx sm" role="menuitem" title="resume — {pr.resume_cmd.join(' ')}" onclick={() => void launchProf(pr.id, true)}>↻</button>
-					{/if}
-					<button class="cx sm" role="menuitem" title="delete profile" onclick={(e) => void delProfile(pr.id, e)}>✕</button>
-				</div>
-			{/each}
-			{#if pErr}<div class="merr">{pErr}</div>{/if}
-			{#if profForm}
-				<div class="mform">
-					<input class="mt" placeholder="name" bind:value={pName} />
-					<input class="mt" placeholder="argv — e.g. claude --continue" autocapitalize="off" autocorrect="off" spellcheck="false" bind:value={pArgv} />
-					<input class="mt" placeholder="cwd (optional)" autocapitalize="off" bind:value={pCwd} />
-					<div class="mcta">
-						<button class="msave" disabled={!pName.trim() || !pArgv.trim()} onclick={() => void saveProfile()}>save</button>
-						<button class="mcx" onclick={() => (profForm = false)}>cancel</button>
-					</div>
-				</div>
-			{:else}
-				<button class="cx dim" role="menuitem" onclick={() => (profForm = true)}>+ save profile…</button>
-			{/if}
-		</div>
+		<div class="dshade" onpointerdown={closeBoth} oncontextmenu={(e) => e.preventDefault()}></div>
 	{/if}
 
-	<!-- session drawer: alerts, then grouped needs-you / running / finished -->
-	{#if $drawerOpen}
-		{@const unacked = $alerts.filter((a) => !a.acked_at)}
-		{@const needs = $orderedSessions.filter(needsYou)}
-		{@const running = $orderedSessions.filter((s) => isLive(s) && !needsYou(s))}
-		{@const finished = $orderedSessions.filter(isFinished)}
-		<!-- outside-press dismiss — the shade sits under the drawer and
-		     below the topbar so the ☰ toggle still works. -->
-		<div class="dshade" onpointerdown={() => drawerOpen.set(false)} oncontextmenu={(e) => e.preventDefault()}></div>
-		<div class="drawer">
-			<div class="dhead">
-				<span>sessions</span>
-				<button class="tb" onclick={toggleShellPick}>+ new</button>
-			</div>
-
-			<div class="ghead"><span>layout</span></div>
-			<div class="presets">
-				{#each coarsePtr() ? MOBILE_PRESETS : PRESETS as pre (pre.name)}
-					{@const cur = $grid.map((r) => r.cells.length).join(',') === pre.shape.join(',')}
-					<button
-						class="preset"
-						class:cur
-						title={pre.name}
-						onclick={() => { applyPreset(pre.shape); scheduleSave(); }}
-					>
-						<span class="pg">
-							{#each pre.shape as n}<span class="pgrow">{#each Array(n) as _}<i></i>{/each}</span>{/each}
-						</span>
-					</button>
-				{/each}
-			</div>
-
-			{#if unacked.length > 0}
-				<div class="ghead"><span>alerts</span></div>
-				{#each unacked as a (a.id)}
-					<div class="arow">
-						<span class="dot" class:live={a.level === 'action'} class:dead={a.level === 'warn'} class:needs={a.level === 'action'}></span>
-						<span class="smain">
-							<span class="sname">{a.transition}</span>
-							<span class="ssub">{a.process || a.session_id} · {fmtAgo(now, a.at)}</span>
-						</span>
-						<button class="sact hist" title="acknowledge alert" onclick={(e) => { e.stopPropagation(); void ackAlert(a.id); }}>ack</button>
-					</div>
-				{/each}
-			{/if}
-
-			{#if needs.length > 0}
-				<div class="ghead">needs you</div>
-				{#each needs as s (s.id)}
-					{@render srow(s)}
-				{/each}
-			{/if}
-
-			{#if running.length > 0}
-				<div class="ghead">running</div>
-				{#each running as s (s.id)}
-					{@render srow(s)}
-				{/each}
-			{/if}
-
-			{#if finished.length > 0}
-				<div class="ghead">
-					<span>finished</span>
-					<button class="clearall" onclick={clearFinished}>clear all</button>
-				</div>
-				{#each finished as s (s.id)}
-					{@render srow(s)}
-				{/each}
-			{/if}
-
-			{#if $sessions.length === 0}
-				<div class="empty">no sessions — tap + new</div>
-			{/if}
-		</div>
-	{/if}
+	<!-- body row: left panel | grab | terminal grid | grab | right panel.
+	     Docked ≥900px (in-flow, grid shrinks); overlay drawers below. -->
+	<div class="body">
+		{#if $panels.left.open}
+			<aside class="panel left" style:width={wide ? `${$panels.left.w}px` : undefined}>
+				<LeftPanel
+					{now}
+					{onopen}
+					{onspawn}
+					{onlaunch}
+					{onend}
+					{onpurge}
+					{onclearfin}
+					{onpreset}
+					onrow={closeLeftOverlay}
+					bind:newopen={lpNew}
+				/>
+			</aside>
+			<!-- svelte-ignore a11y_no_static_element_interactions — splitter -->
+			<div class="grab" role="separator" onpointerdown={(e) => panelDrag(e, 'left')}></div>
+		{/if}
 
 	<!-- terminal grid: preset-shaped rows of slots. Each slot holds one
 	     pane from the pool (or waits for a tab drop); slot/row weights
@@ -788,6 +680,10 @@
 										onrequestinput={() => (kbdOpen = true)}
 										onpull={termPull}
 										onpullrelease={termPullEnd}
+										onprompt={(pr) =>
+											prompts.update((m) => ({ ...m, [p.sessionId]: pr }))}
+										onpromptclear={() =>
+											prompts.update((m) => ({ ...m, [p.sessionId]: null }))}
 									/>
 								{/key}
 							</div>
@@ -845,10 +741,19 @@
 		{/each}
 		{#if $panes.length === 0}
 			<div class="empty-main">
-				<button class="bigspawn" onclick={toggleShellPick}>open a session</button>
+				<button class="bigspawn" onclick={openNew}>open a session</button>
 			</div>
 		{/if}
 	</main>
+
+		{#if $panels.right.open}
+			<!-- svelte-ignore a11y_no_static_element_interactions — splitter -->
+			<div class="grab" role="separator" onpointerdown={(e) => panelDrag(e, 'right')}></div>
+			<aside class="panel right" style:width={wide ? `${$panels.right.w}px` : undefined}>
+				<RightPanel sessionId={activeSessionId} onclose={closeRight} />
+			</aside>
+		{/if}
+	</div>
 
 	{#if kbdOpen}
 		<InputLine
@@ -873,42 +778,7 @@
 		}}
 		kbdOn={coarsePtr() ? kbdArmed : kbdOpen}
 	/>
-
-	{#if $paletteOpen}
-		<CommandPalette sessionId={activeSessionId} onclose={() => paletteOpen.set(false)} />
-	{/if}
 </div>
-
-<!-- one session row — dot, name + tool badge, state/wait subline, and the
-     lifecycle action (live → end, finished → del). -->
-{#snippet srow(s: Session)}
-	<div
-		class="srow"
-		class:needs={needsYou(s)}
-		role="button"
-		tabindex="0"
-		onclick={() => openSession(s)}
-		onkeydown={() => openSession(s)}
-	>
-		<span class="dot" class:live={isLive(s)} class:dead={isFinished(s)} class:needs={needsYou(s)}></span>
-		<span class="smain">
-			<span class="stop">
-				<span class="sname">{label(s)}</span>
-				{#if toolBadge(s)}<span class="badge">{toolBadge(s)}</span>{/if}
-				{#if pinUnv(s.id)}<span class="badge unv" title="adapter pin unverified — binary version outside the tested constraint">unverified</span>{/if}
-			</span>
-			<span class="ssub" class:needs={needsYou(s)}>
-				{subLabel(s, now)}{#if detachedOf(s)}<span class="det"> · unattended</span>{/if}
-			</span>
-		</span>
-		{#if isLive(s)}
-			<button class="sact end" title="terminate session — keeps the log row" onclick={(e) => endOrDelete(s.id, e)}>end</button>
-		{:else}
-			<button class="sact hist" title="purge state history only — keeps row + output" onclick={(e) => purgeLog(s.id, e)}>hist</button>
-			<button class="sact del" title="delete session + log + output" onclick={(e) => endOrDelete(s.id, e)}>del</button>
-		{/if}
-	</div>
-{/snippet}
 
 <style>
 	.shell {
@@ -917,119 +787,6 @@
 		display: flex;
 		flex-direction: column;
 		background: #0a0e14;
-	}
-	.shade {
-		position: fixed;
-		inset: 0;
-		z-index: 55;
-	}
-	.shellpick {
-		position: fixed;
-		z-index: 56;
-		min-width: 190px;
-		max-width: min(300px, 92vw);
-		max-height: 62dvh;
-		overflow-y: auto;
-		background: #11161f;
-		border: 1px solid #2b3b55;
-		border-radius: 10px;
-		padding: 4px;
-		box-shadow: 0 8px 28px rgb(0 0 0 / 0.5);
-	}
-	.cx {
-		display: block;
-		width: 100%;
-		min-height: 40px;
-		padding: 8px 14px;
-		border: none;
-		border-radius: 7px;
-		background: none;
-		color: #d7e1f0;
-		font: 14px ui-monospace, monospace;
-		text-align: left;
-	}
-	.cx:active,
-	.cx:hover {
-		background: #1e2a3d;
-	}
-	/* +new menu groups: shells, then saved agent launch profiles. */
-	.mgrp {
-		padding: 8px 14px 2px;
-		color: #3d4d68;
-		font: 10px ui-monospace, monospace;
-		letter-spacing: 0.15em;
-	}
-	.mrow {
-		display: flex;
-		align-items: stretch;
-	}
-	.mrow .cx {
-		flex: 1;
-		min-width: 0;
-	}
-	.marg {
-		display: block;
-		font-size: 10px;
-		color: #4a5568;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.cx.sm {
-		flex: 0 0 auto;
-		width: 44px;
-	}
-	.cx.dim {
-		color: #5a6f92;
-	}
-	.mform {
-		padding: 4px 8px 8px;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-	.mt {
-		background: #0d1117;
-		border: 1px solid #22304a;
-		border-radius: 7px;
-		color: #d7e1f0;
-		font: 12px ui-monospace, monospace;
-		padding: 8px 10px;
-		outline: none;
-		min-height: 36px;
-	}
-	.mt:focus {
-		border-color: #4cc9f0;
-	}
-	.merr {
-		font: 11px ui-monospace, monospace;
-		color: #ff8080;
-		padding: 0 2px;
-	}
-	.mcta {
-		display: flex;
-		gap: 6px;
-		justify-content: flex-end;
-	}
-	.msave {
-		min-height: 38px;
-		padding: 0 16px;
-		border: 1px solid #1d3550;
-		border-radius: 8px;
-		background: #0e1a26;
-		color: #4cc9f0;
-		font: 12px ui-monospace, monospace;
-	}
-	.msave:disabled {
-		opacity: 0.4;
-	}
-	.mcx {
-		min-height: 38px;
-		padding: 0 12px;
-		border: 0;
-		background: transparent;
-		color: #6b7f9e;
-		font: 12px ui-monospace, monospace;
 	}
 	.ptr {
 		position: fixed;
@@ -1160,37 +917,60 @@
 	.tabx:active {
 		color: #ff8080;
 	}
-	.drawer {
-		position: absolute;
-		top: calc(50px + env(safe-area-inset-top, 0px));
-		left: 0;
-		right: 0;
-		z-index: 20;
-		background: #0d1117f2;
-		backdrop-filter: blur(8px);
-		border-bottom: 1px solid #22304a;
-		max-height: 60dvh;
-		overflow-y: auto;
-		overflow-y: overlay; /* float over the list where supported */
-		scrollbar-width: auto;
-		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-		/* keep downward drags at scroll-top for pull-to-refresh —
-		   don't let the browser claim them as overscroll */
-		overscroll-behavior: contain;
+	/* Panels dock in the body row ≥900px — in-flow, so the grid shrinks
+	   rather than being overlaid. Below the breakpoint they become
+	   fixed overlay drawers with the .dshade scrim. */
+	.body {
+		flex: 1;
+		display: flex;
+		min-height: 0;
+		min-width: 0;
 	}
-	.drawer::-webkit-scrollbar {
-		width: 12px;
-		background: transparent;
+	.panel {
+		flex-shrink: 0;
+		min-width: 0;
+		background: #0d1117;
+		overflow: hidden;
+		display: flex;
 	}
-	.drawer::-webkit-scrollbar-thumb {
-		background: rgba(255, 255, 255, 0.3);
-		border-radius: 4px;
+	.panel.left {
+		border-right: 1px solid #1a2334;
 	}
-	.drawer::-webkit-scrollbar-thumb:hover {
-		background: rgba(255, 255, 255, 0.45);
+	.panel.right {
+		border-left: 1px solid #1a2334;
 	}
-	.drawer::-webkit-scrollbar-track {
-		background: transparent;
+	.grab {
+		flex-shrink: 0;
+		width: 8px;
+		margin: 0 -4px;
+		z-index: 5;
+		cursor: col-resize;
+		touch-action: none;
+	}
+	.grab:hover,
+	.grab:active {
+		background: #22304a;
+	}
+	@media (max-width: 899.5px) {
+		.panel {
+			position: fixed;
+			top: calc(50px + env(safe-area-inset-top, 0px));
+			bottom: 0;
+			width: min(85vw, 360px);
+			z-index: 21;
+			box-shadow: 0 0 32px #000a;
+		}
+		.panel.left {
+			left: 0;
+			border-right: 1px solid #22304a;
+		}
+		.panel.right {
+			right: 0;
+			border-left: 1px solid #22304a;
+		}
+		.grab {
+			display: none;
+		}
 	}
 	.dshade {
 		position: fixed;
@@ -1200,191 +980,10 @@
 		bottom: 0;
 		z-index: 19;
 	}
-	.dhead {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 10px 14px;
-		color: #6b7f9e;
-		font: 12px ui-monospace, monospace;
-		letter-spacing: 0.15em;
-	}
-	.srow,
-	.arow {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 12px 14px;
-		border-top: 1px solid #141b26;
-		cursor: pointer;
-	}
-	.srow:active {
-		background: #141b26;
-	}
-	.dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		flex-shrink: 0;
-	}
-	.dot.live {
-		background: #3ddc84;
-	}
-	.dot.needs {
-		background: #f0b429;
-		box-shadow: 0 0 6px #f0b42980;
-	}
-	.dot.dead {
-		background: #5a3540;
-	}
-	.srow.needs {
-		background: #1a160c;
-	}
-	.smain {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.stop {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-width: 0;
-	}
-	.sname {
-		font: 14px ui-monospace, monospace;
-		color: #e6e6e6;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.badge {
-		flex-shrink: 0;
-		font: 10px ui-monospace, monospace;
-		color: #4cc9f0;
-		border: 1px solid #1d3550;
-		border-radius: 5px;
-		padding: 1px 6px;
-		background: #0e1a26;
-	}
-	/* §06 pin mismatch — probed binary fell outside the adapter's
-	   declared version constraint. */
-	.badge.unv {
-		color: #d0a24a;
-		border-color: #3d3014;
-		background: #1a160c;
-	}
 	.tabpin {
 		color: #f0b429;
 		font: 11px ui-monospace, monospace;
 		margin-left: 5px;
-	}
-	.ssub {
-		font: 11px ui-monospace, monospace;
-		color: #4a5568;
-	}
-	.ssub.needs {
-		color: #f0b429;
-	}
-	.det {
-		color: #7a5aa0;
-	}
-	.ghead {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 8px 14px 4px;
-		color: #3d4d68;
-		font: 10px ui-monospace, monospace;
-		letter-spacing: 0.18em;
-	}
-	/* layout preset menu — mini grid glyph + name, current shape lit */
-	.presets {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-		padding: 4px 10px 6px;
-	}
-	.preset {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: 1px solid #1c2634;
-		border-radius: 8px;
-		background: #0d1117;
-		color: #6b7f9e;
-		padding: 6px 9px;
-		font: 10px ui-monospace, monospace;
-		min-height: 40px;
-	}
-	.preset.cur {
-		border-color: #4cc9f0;
-		color: #e6f2ff;
-	}
-	.preset:active {
-		background: #1c2a44;
-	}
-	/* glyph: rows of mini cells mirroring the shape */
-	.pg {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		width: 26px;
-	}
-	.pgrow {
-		display: flex;
-		gap: 2px;
-		flex: 1;
-	}
-	.pgrow i {
-		flex: 1;
-		height: 9px;
-		background: currentColor;
-		opacity: 0.55;
-		border-radius: 1px;
-	}
-	.clearall {
-		border: 0;
-		background: transparent;
-		color: #8a4a5a;
-		font: 10px ui-monospace, monospace;
-		letter-spacing: 0.12em;
-		padding: 12px 10px;
-		min-height: 44px;
-	}
-	.clearall:active {
-		color: #ff8080;
-	}
-	.sact {
-		min-width: 44px;
-		height: 44px;
-		border: 1px solid #22304a;
-		border-radius: 8px;
-		background: #141b26;
-		font: 11px ui-monospace, monospace;
-		flex-shrink: 0;
-	}
-	.sact.end {
-		color: #d0a24a;
-	}
-	.sact.end:active {
-		background: #2a2410;
-	}
-	.sact.hist {
-		color: #6b7f9e;
-	}
-	.sact.hist:active {
-		background: #1c2a44;
-		color: #9db2ce;
-	}
-	.sact.del {
-		color: #8a4a5a;
-	}
-	.sact.del:active {
-		background: #3a1f1f;
-		color: #ff8080;
 	}
 	.tabdot {
 		display: inline-block;
@@ -1398,7 +997,6 @@
 		background: #f0b429;
 		box-shadow: 0 0 5px #f0b42980;
 	}
-	.empty,
 	.empty-main {
 		padding: 24px;
 		text-align: center;
