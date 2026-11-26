@@ -123,7 +123,9 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	}
 	// Direct command spawns (manifest execute, launch profile) record the
 	// executable as the row's shell — honest about what the PTY runs.
-	cmdArgv := req.Argv
+	// A Wrap request execs argv inside that login shell instead, so the
+	// record's shell is the wrapper (the agent surfaces as its fg job).
+	cmdArgv := wrapArgv(req.Wrap, req.Argv)
 	if len(cmdArgv) > 0 {
 		shell = cmdArgv[0]
 	}

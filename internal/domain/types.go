@@ -96,6 +96,10 @@ type SpawnRequest struct {
 	Rows   int               `json:"rows"`
 	Argv   []string          `json:"argv,omitempty"`
 	Env    map[string]string `json:"env,omitempty"`
+	// Wrap, when set with Argv, execs the argv inside a login shell —
+	// [Wrap, "-lc", quoted argv] — so rc-file PATH/aliases resolve.
+	// Ignored without Argv (shell-only launches use Shell).
+	Wrap string `json:"-"`
 }
 
 // Workspace is a saved layout — views over sessions, not processes.

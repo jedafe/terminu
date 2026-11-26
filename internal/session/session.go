@@ -136,6 +136,15 @@ func (m *Manager) spawnArgv(t domain.Target, rec *domain.Session, cmdArgv, envPa
 	}
 }
 
+// wrapArgv builds the wrapped command argv for SpawnRequest.Wrap:
+// [shell, -lc, quoted-join of argv]. Unwraps passthrough.
+func wrapArgv(wrap string, argv []string) []string {
+	if wrap == "" || len(argv) == 0 {
+		return argv
+	}
+	return []string{wrap, "-lc", quoteJoin(argv)}
+}
+
 // quoteJoin shell-joins an argv for the nsenter inner script — each
 // element quoted so spaces survive the one relay that must carry a
 // string (nsenter → su -c → script).
