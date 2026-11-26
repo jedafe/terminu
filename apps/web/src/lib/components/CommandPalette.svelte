@@ -1,17 +1,24 @@
-<!-- Ref: .teos/sections/04-command-intelligence.md — the ⌘K palette:
-     fuzzy search over /api/commands with context-first ranking for the
-     armed session, then a cheat-sheet detail per manifest (ADR-007:
+<!-- Ref: .teos/sections/04-command-intelligence.md + side-panels design —
+     the right panel's commands view: session-aware command list (context
+     manifests for the session's live tool, generic set for a bare shell),
+     --help discovery, then a cheat-sheet detail per manifest (ADR-007:
      display + copy only — nothing here runs the command). -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { api, ApiError, type CommandManifest, type CommandSummary } from '$lib/api';
+	import {
+		api,
+		ApiError,
+		type CommandManifest,
+		type CommandSummary,
+		type ContextResult
+	} from '$lib/api';
 
 	let {
 		sessionId = '',
 		onclose
 	}: {
 		sessionId?: string;
-		onclose: () => void;
+		onclose?: () => void;
 	} = $props();
 
 	type Phase = 'search' | 'detail';
@@ -29,12 +36,52 @@
 	let debounce: ReturnType<typeof setTimeout> | null = null;
 	let seq = 0;
 
-	// Open = one search against the armed session's context — ctx rows
-	// land first without any typing (§04 context actions).
+	// Session context — the live tool/procs/cwd behind the armed pane;
+	// empty-query rows are its manifest list, and the ctx header shows
+	// what's bound. Refetched when the armed session changes.
+	let ctx = $state<ContextResult | null>(null);
+	let lastCtx = '';
+	async function loadContext(id: string) {
+		if (!id) {
+			ctx = null;
+			return;
+		}
+		try {
+			ctx = await api.commandContext(id);
+		} catch {
+			ctx = null;
+		}
+	}
+	$effect(() => {
+		if (sessionId !== lastCtx) {
+			lastCtx = sessionId;
+			void loadContext(sessionId);
+		}
+	});
+
+	// The running tool a discover call should target — adapter-bound
+	// name first, live foreground process as the fallback.
+	const ctxExe = $derived(ctx?.tool || ctx?.processes?.[0] || '');
+	const discoverTarget = $derived(q.trim() || ctxExe);
+	// "discover <exe> --help" surfaces when the session's tool has no
+	// manifests, or the query names an uncurated binary.
+	const canDiscover = $derived(
+		(ctxExe !== '' && (ctx?.commands?.length ?? 0) === 0 && q.trim() === '') ||
+			(/^[a-z0-9][a-z0-9_.-]*$/.test(q) && !rows.some((r) => r.application === q))
+	);
+
+	// Open = the session's context commands without any typing (§04).
+	// A bare shell (ctx loaded, no manifests, no bound exe) falls back
+	// to the generic curated set.
 	async function search() {
 		const my = ++seq;
 		try {
-			const r = await api.commands(q, sessionId);
+			let r: CommandSummary[];
+			if (q.trim() === '' && ctx) {
+				r = ctx.commands.length || ctxExe ? ctx.commands : await api.commands('', sessionId, 20);
+			} else {
+				r = await api.commands(q, sessionId);
+			}
 			if (my !== seq) return; // a newer keystroke owns the list
 			rows = r;
 			sel = 0;
@@ -46,6 +93,10 @@
 			}
 		}
 	}
+	// ctx arriving async re-runs search so the fallback path applies too.
+	$effect(() => {
+		if (ctx && q.trim() === '') void search();
+	});
 	function onQ() {
 		if (debounce) clearTimeout(debounce);
 		debounce = setTimeout(search, 120);
@@ -81,7 +132,7 @@
 			copied = false;
 			void tick().then(() => inputEl?.focus());
 		} else {
-			onclose();
+			onclose?.();
 		}
 	}
 	function scrollSel() {
@@ -133,20 +184,22 @@
 		}
 	}
 
-	// "discover <q>" — scrapes --help into provisional manifests
-	// (broker-gated controlled op, §04 auto-discovery).
-	const canDiscover = $derived(
-		/^[a-z0-9][a-z0-9_.-]*$/.test(q) && !rows.some((r) => r.application === q)
-	);
+	// "discover <exe>" — scrapes --help into provisional manifests
+	// (broker-gated controlled op, §04 auto-discovery). Targets the
+	// session's running tool when the query box is empty.
 	async function discover() {
 		if (discBusy) return;
-		const exe = q;
+		const exe = discoverTarget;
+		if (!exe) return;
 		discBusy = true;
 		err = '';
 		try {
 			const found = await api.discovered(exe);
 			if (found.length === 0) err = `no subcommands found in ${exe} --help`;
-			else await search();
+			else {
+				await loadContext(sessionId);
+				await search();
+			}
 		} catch (e) {
 			err = e instanceof ApiError ? e.message : 'discovery failed';
 		} finally {
@@ -165,119 +218,130 @@
 	});
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions — modal scrim -->
-<div class="pshade" onpointerdown={onclose} oncontextmenu={(e) => e.preventDefault()}>
-	<!-- svelte-ignore a11y_no_static_element_interactions — panel -->
-	<div class="palette" onpointerdown={(e) => e.stopPropagation()} onkeydown={keydown}>
-		{#if phase === 'search'}
-			<div class="prow">
-				<span class="pglyph">⌘</span>
-				<input
-					bind:this={inputEl}
-					class="pq"
-					placeholder="command…"
-					autocapitalize="off"
-					autocorrect="off"
-					spellcheck="false"
-					bind:value={q}
-					oninput={onQ}
-				/>
-				<button class="px" aria-label="close" onclick={onclose}>✕</button>
-			</div>
-			<div class="plist" bind:this={listEl}>
-				{#each rows as c, i (c.id)}
-					<button class="crow" class:sel={i === sel} onpointerenter={() => (sel = i)} onclick={() => void pick(c)}>
-						<span class="cmain">
-							<span class="cname">
-								{c.name}
-								{#if c.context}<span class="cctx">ctx</span>{/if}
-							</span>
-							{#if c.description}<span class="cdesc">{c.description}</span>{/if}
-						</span>
-						<span class="cside">
-							<span class="capp">{c.application}</span>
-							{#if c.risk !== 'informational'}<span class="crisk" class:hot={c.risk === 'confirmed'}>{c.risk}</span>{/if}
-							{#if c.source === 'discovered'}<span class="csrc">auto</span>{/if}
-						</span>
-					</button>
-				{/each}
-				{#if rows.length === 0 && !err}
-					<div class="cempty">no commands</div>
-				{/if}
-				{#if err}
-					<div class="perr" style="padding: 10px 12px">{err}</div>
-				{/if}
-				{#if canDiscover}
-					<button class="crow cdisc" disabled={discBusy} onclick={() => void discover()}>
-						{discBusy ? `reading ${q} --help…` : `discover "${q}" — read --help`}
-					</button>
-				{/if}
-			</div>
-			<div class="pfoot">↵ view · ↑↓ pick · esc close{sessionId ? ' · ctx-ranked for this pane' : ''}</div>
-		{:else if phase === 'detail' && manifest}
-			<div class="phead">
-				<button class="pback" onclick={back}>‹</button>
-				<span class="ptitle">{manifest.name}</span>
-				<span class="capp">{manifest.application}</span>
-				{#if manifest.execution.risk !== 'informational'}
-					<span class="crisk" class:hot={manifest.execution.risk === 'confirmed'}>{manifest.execution.risk}</span>
-				{/if}
-			</div>
-			<div class="pform">
-				{#if manifest.description}<div class="pdesc">{manifest.description}</div>{/if}
-				<div class="pargv">
-					{#each argvTemplate(manifest) as a, i (i)}<code>{a}</code>{/each}
-				</div>
-				{#if (manifest.parameters ?? []).length > 0}
-					<div class="pparams">
-						{#each manifest.parameters ?? [] as p (p.name)}
-							<div class="pp">
-								<span class="ppn">
-									{p.name}{#if p.required}<span class="preq">*</span>{/if}
-								</span>
-								{#if p.flag}<code class="ppf">{p.flag}</code>{/if}
-								<span class="ppt">{p.type}{p.type === 'enum' && p.options ? `: ${p.options.join(' | ')}` : ''}</span>
-								{#if p.description}<span class="ppd">{p.description}</span>{/if}
-							</div>
-						{/each}
-					</div>
-				{/if}
-				{#if manifest.execution.working_dir}
-					<div class="pnote">
-						runs in {manifest.execution.working_dir === '{session.cwd}'
-							? "the session's working directory"
-							: manifest.execution.working_dir}
-					</div>
-				{/if}
-				{#if err}<div class="perr">{err}</div>{/if}
-				<div class="pcta">
-					<button class="pcopy" onclick={() => void copyArgv()}>
-						{copied ? 'copied ✓' : 'copy command'}
-					</button>
-				</div>
+<!-- svelte-ignore a11y_no_static_element_interactions — panel root -->
+<div class="cmdview" onkeydown={keydown} role="presentation">
+	{#if phase === 'search'}
+		<div class="prow">
+			<span class="pglyph">⌘</span>
+			<input
+				bind:this={inputEl}
+				class="pq"
+				placeholder="command…"
+				autocapitalize="off"
+				autocorrect="off"
+				spellcheck="false"
+				bind:value={q}
+				oninput={onQ}
+			/>
+		</div>
+		{#if ctx}
+			<div class="cctxh">
+				{ctx.tool || ctx.processes.join(' ') || 'shell'}{ctx.cwd ? ` · ${ctx.cwd}` : ''}
+				{#if ctx.pin_status === 'unverified'}<span class="badge unv">unverified</span>{/if}
 			</div>
 		{/if}
-	</div>
+		<div class="plist" bind:this={listEl}>
+			{#each rows as c, i (c.id)}
+				<button class="crow" class:sel={i === sel} onpointerenter={() => (sel = i)} onclick={() => void pick(c)}>
+					<span class="cmain">
+						<span class="cname">
+							{c.name}
+							{#if c.context}<span class="cctx">ctx</span>{/if}
+						</span>
+						{#if c.description}<span class="cdesc">{c.description}</span>{/if}
+					</span>
+					<span class="cside">
+						<span class="capp">{c.application}</span>
+						{#if c.risk !== 'informational'}<span class="crisk" class:hot={c.risk === 'confirmed'}>{c.risk}</span>{/if}
+						{#if c.source === 'discovered'}<span class="csrc">auto</span>{/if}
+					</span>
+				</button>
+			{/each}
+			{#if rows.length === 0 && !err}
+				<div class="cempty">no commands</div>
+			{/if}
+			{#if err}
+				<div class="perr" style="padding: 10px 12px">{err}</div>
+			{/if}
+			{#if canDiscover}
+				<button class="crow cdisc" disabled={discBusy} onclick={() => void discover()}>
+					{discBusy ? `reading ${discoverTarget} --help…` : `discover "${discoverTarget}" — read --help`}
+				</button>
+			{/if}
+		</div>
+		<div class="pfoot">↵ view · ↑↓ pick · esc back{ctx ? ' · session commands' : ''}</div>
+	{:else if phase === 'detail' && manifest}
+		<div class="phead">
+			<button class="pback" onclick={back}>‹</button>
+			<span class="ptitle">{manifest.name}</span>
+			<span class="capp">{manifest.application}</span>
+			{#if manifest.execution.risk !== 'informational'}
+				<span class="crisk" class:hot={manifest.execution.risk === 'confirmed'}>{manifest.execution.risk}</span>
+			{/if}
+		</div>
+		<div class="pform">
+			{#if manifest.description}<div class="pdesc">{manifest.description}</div>{/if}
+			<div class="pargv">
+				{#each argvTemplate(manifest) as a, i (i)}<code>{a}</code>{/each}
+			</div>
+			{#if (manifest.parameters ?? []).length > 0}
+				<div class="pparams">
+					{#each manifest.parameters ?? [] as p (p.name)}
+						<div class="pp">
+							<span class="ppn">
+								{p.name}{#if p.required}<span class="preq">*</span>{/if}
+							</span>
+							{#if p.flag}<code class="ppf">{p.flag}</code>{/if}
+							<span class="ppt">{p.type}{p.type === 'enum' && p.options ? `: ${p.options.join(' | ')}` : ''}</span>
+							{#if p.description}<span class="ppd">{p.description}</span>{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+			{#if manifest.execution.working_dir}
+				<div class="pnote">
+					runs in {manifest.execution.working_dir === '{session.cwd}'
+						? "the session's working directory"
+						: manifest.execution.working_dir}
+				</div>
+			{/if}
+			{#if err}<div class="perr">{err}</div>{/if}
+			<div class="pcta">
+				<button class="pcopy" onclick={() => void copyArgv()}>
+					{copied ? 'copied ✓' : 'copy command'}
+				</button>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
-	.pshade {
-		position: fixed;
-		inset: 0;
-		z-index: 70;
-		background: #06090db8;
+	.cmdview {
 		display: flex;
-		justify-content: center;
-		align-items: flex-start;
-		padding: 12dvh 10px 0;
-	}
-	.palette {
-		width: min(560px, 94vw);
+		flex-direction: column;
+		height: 100%;
 		background: #0d1117;
-		border: 1px solid #22304a;
-		border-radius: 12px;
-		box-shadow: 0 16px 48px #000c;
 		overflow: hidden;
+	}
+	.cctxh {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 12px;
+		border-bottom: 1px solid #141b26;
+		color: #4a5568;
+		font: 11px ui-monospace, monospace;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.badge.unv {
+		color: #d0a24a;
+		border: 1px solid #3d3014;
+		border-radius: 5px;
+		padding: 1px 6px;
+		background: #1a160c;
+		font-size: 10px;
 	}
 	.prow {
 		display: flex;
@@ -300,19 +364,9 @@
 		outline: none;
 		padding: 8px 0;
 	}
-	.px {
-		border: 0;
-		background: transparent;
-		color: #4a5568;
-		font-size: 12px;
-		min-width: 36px;
-		min-height: 36px;
-	}
-	.px:active {
-		color: #ff8080;
-	}
 	.plist {
-		max-height: 52dvh;
+		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
 	}
 	.crow {
@@ -429,7 +483,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		max-height: 60dvh;
+		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
 	}
 	.preq {
