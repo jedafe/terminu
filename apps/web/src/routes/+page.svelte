@@ -707,12 +707,12 @@
 					<button class="cx sm" role="menuitem" title="delete profile" onclick={(e) => void delProfile(pr.id, e)}>✕</button>
 				</div>
 			{/each}
+			{#if pErr}<div class="merr">{pErr}</div>{/if}
 			{#if profForm}
 				<div class="mform">
 					<input class="mt" placeholder="name" bind:value={pName} />
 					<input class="mt" placeholder="argv — e.g. claude --continue" autocapitalize="off" autocorrect="off" spellcheck="false" bind:value={pArgv} />
 					<input class="mt" placeholder="cwd (optional)" autocapitalize="off" bind:value={pCwd} />
-					{#if pErr}<div class="merr">{pErr}</div>{/if}
 					<div class="mcta">
 						<button class="msave" disabled={!pName.trim() || !pArgv.trim()} onclick={() => void saveProfile()}>save</button>
 						<button class="mcx" onclick={() => (profForm = false)}>cancel</button>

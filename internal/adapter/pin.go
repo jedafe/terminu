@@ -47,7 +47,9 @@ func Satisfies(constraint, version string) bool {
 			if cmp >= 0 {
 				return false
 			}
-		case "=", "==":
+		case "", "=", "==":
+			// A bare term ("1.5") is an exact match — it must constrain,
+			// not slip through as "any version satisfies".
 			if cmp != 0 {
 				return false
 			}
@@ -55,6 +57,10 @@ func Satisfies(constraint, version string) bool {
 			if cmp == 0 {
 				return false
 			}
+		default:
+			// An operator we don't parse (~>, ^, …) can't weaken the
+			// constraint — fail closed rather than verify by accident.
+			return false
 		}
 	}
 	return true

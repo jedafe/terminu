@@ -38,6 +38,12 @@ func TestSatisfies(t *testing.T) {
 		{"!=1.0.0", "1.0.0", false},
 		{">=0.70", "0.70", true},
 		{">=0.70", "nonsense", false},
+		// A bare term is an exact match — it must constrain, not pass all.
+		{"1.2.3", "1.2.3", true},
+		{"1.2.3", "1.2.4", false},
+		// Unrecognized operators fail closed — they can't weaken a pin.
+		{"~>1.0", "1.5.0", false},
+		{"^1.0", "1.5.0", false},
 	} {
 		if got := Satisfies(c.constraint, c.version); got != c.want {
 			t.Errorf("Satisfies(%q,%q) = %v want %v", c.constraint, c.version, got, c.want)

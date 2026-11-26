@@ -166,6 +166,11 @@ func (m *Manifest) Validate() error {
 			if !params[root] {
 				return fmt.Errorf("%w: %s: %s: {%s} not a declared param", ErrInvalidManifest, m.ID, where, ref[1])
 			}
+			// Field access is {name.id} only — {p.anything} resolving to
+			// p's whole value would silently mislead manifest authors.
+			if i := strings.Index(ref[1], "."); i >= 0 && ref[1][i+1:] != "id" {
+				return fmt.Errorf("%w: %s: %s: {%s}: only {name.id} field access is supported", ErrInvalidManifest, m.ID, where, ref[1])
+			}
 		}
 		return nil
 	}
