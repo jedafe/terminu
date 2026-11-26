@@ -11,7 +11,13 @@ import {
 	sizeCellPair,
 	sizeRowPair,
 	newPane,
-	closePane
+	closePane,
+	panels,
+	sanitizePanels,
+	setPanelWidth,
+	resetPanelWidth,
+	PANEL_MIN,
+	PANEL_MAX
 } from './stores';
 
 const ids = () => get(panes).map((p) => p.id);
@@ -110,6 +116,33 @@ test('movePane reorders pool tabs without touching slots', () => {
 	const [a, b, c] = ids();
 	movePane(c, 0);
 	expect(ids()).toEqual([c, a, b]);
+});
+
+test('sanitizePanels validates and defaults', () => {
+	expect(sanitizePanels(undefined)).toEqual({
+		left: { open: false, w: 300 },
+		right: { open: false, w: 340 }
+	});
+	expect(
+		sanitizePanels({ left: { open: true, w: 250 }, right: { open: 1, w: 'x' } })
+	).toEqual({
+		left: { open: true, w: 250 },
+		right: { open: false, w: 340 }
+	});
+	// out-of-range widths clamp
+	expect(sanitizePanels({ left: { open: false, w: 50 }, right: { open: false, w: 9999 } }))
+		.toEqual({ left: { open: false, w: PANEL_MIN }, right: { open: false, w: PANEL_MAX } });
+});
+
+test('setPanelWidth clamps; resetPanelWidth restores defaults', () => {
+	panels.set({ left: { open: false, w: 300 }, right: { open: false, w: 340 } });
+	setPanelWidth('left', 10);
+	expect(get(panels).left.w).toBe(PANEL_MIN);
+	setPanelWidth('left', 99999);
+	expect(get(panels).left.w).toBeLessThanOrEqual(PANEL_MAX);
+	setPanelWidth('right', 500);
+	resetPanelWidth('right');
+	expect(get(panels).right.w).toBe(340);
 });
 
 // In-place cell mutation keeps object identity — Svelte then never

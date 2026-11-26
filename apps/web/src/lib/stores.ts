@@ -1,7 +1,7 @@
 // App state: session registry + pane layout (views over sessions).
 import { writable, derived, get } from 'svelte/store';
 import { api, type Alert, type LaunchProfile, type Session, type Workspace } from './api';
-import { subscribeEvents } from './ws';
+import { subscribeEvents, type PromptFrame } from './ws';
 
 export const sessions = writable<Session[]>([]);
 export const me = writable<{ username: string; role: string } | null>(null);
@@ -119,6 +119,91 @@ export const activePane = writable<string | null>(null);
 export const workspaces = writable<Workspace[]>([]);
 export const activeWorkspace = writable<number>(1);
 export const drawerOpen = writable<boolean>(false);
+
+// Side panels (§11): docked resizable columns ≥900px, overlay drawers
+// below. Widths + open state persist inside the workspace layout.
+export interface PanelSide {
+	open: boolean;
+	w: number;
+}
+export const PANEL_MIN = 220;
+export const PANEL_MAX = 560;
+const PANEL_DEF = { left: 300, right: 340 };
+export const panels = writable<{ left: PanelSide; right: PanelSide }>({
+	left: { open: false, w: PANEL_DEF.left },
+	right: { open: false, w: PANEL_DEF.right }
+});
+
+// ≥900px = docked columns; below = overlay drawers (test-safe: no
+// matchMedia in bun → false = overlay semantics).
+export function wideLayout(): boolean {
+	return typeof matchMedia !== 'undefined' && matchMedia('(min-width: 900px)').matches;
+}
+
+export function togglePanel(side: 'left' | 'right') {
+	panels.update((p) => {
+		const next = { ...p, [side]: { ...p[side], open: !p[side].open } };
+		// Overlay drawers: one at a time — opening one closes the other.
+		if (!wideLayout() && next[side].open) {
+			const other = side === 'left' ? 'right' : 'left';
+			next[other] = { ...next[other], open: false };
+		}
+		return next;
+	});
+}
+export function setPanelWidth(side: 'left' | 'right', w: number) {
+	panels.update((p) => ({
+		...p,
+		[side]: { ...p[side], w: clampPanelW(w) }
+	}));
+}
+export function resetPanelWidth(side: 'left' | 'right') {
+	panels.update((p) => ({ ...p, [side]: { ...p[side], w: PANEL_DEF[side] } }));
+}
+function clampPanelW(w: number) {
+	const max = Math.min(
+		PANEL_MAX,
+		typeof innerWidth !== 'undefined' ? Math.floor(innerWidth * 0.45) : PANEL_MAX
+	);
+	return Math.max(PANEL_MIN, Math.min(max, Math.round(w) || PANEL_DEF.left));
+}
+
+// Restore/validate — corrupt or absent values fall to defaults so an
+// old workspace layout can never wedge the shell.
+export function sanitizePanels(v: unknown): { left: PanelSide; right: PanelSide } {
+	const one = (x: unknown, def: number): PanelSide => {
+		const o = (x ?? {}) as { open?: unknown; w?: unknown };
+		const w = typeof o.w === 'number' ? clampPanelW(o.w) : def;
+		return { open: o.open === true, w };
+	};
+	const p = (v ?? {}) as { left?: unknown; right?: unknown };
+	return { left: one(p.left, PANEL_DEF.left), right: one(p.right, PANEL_DEF.right) };
+}
+
+// Panel views are ephemeral — never persisted.
+export const rightView = writable<'session' | 'commands'>('session');
+export const leftView = writable<'sessions' | 'profiles'>('sessions');
+// ⌘K / ⌘ = "open the right panel on the commands view".
+export function openCommands() {
+	rightView.set('commands');
+	panels.update((p) => {
+		const next = { ...p, right: { ...p.right, open: true } };
+		if (!wideLayout()) next.left = { ...next.left, open: false };
+		return next;
+	});
+}
+// ⌘K toggles: the palette it replaced closed on a second press.
+export function toggleCommands() {
+	if (get(rightView) === 'commands' && get(panels).right.open) {
+		panels.update((p) => ({ ...p, right: { ...p.right, open: false } }));
+		return;
+	}
+	openCommands();
+}
+
+// Live prompt cards per session — TerminalSurface feeds this from the
+// WS prompt frames; the right panel renders the armed session's card.
+export const prompts = writable<Record<string, PromptFrame | null>>({});
 // Default 'mouse': taps/clicks drive the TUI when it holds the mouse.
 // 'select' is an armed episode — set by the long-press menu's "select"
 // item, it forces highlight drags (synthesized shift+press) until a
@@ -344,7 +429,8 @@ export async function saveWorkspace() {
 	const layout = JSON.stringify({
 		panes: get(panes),
 		grid: get(grid),
-		active: get(activePane)
+		active: get(activePane),
+		panels: get(panels)
 	});
 	await api.putWorkspace(get(activeWorkspace), {
 		name: 'default',
@@ -363,7 +449,9 @@ export async function restoreWorkspace() {
 			panes?: (Pane & { size?: number })[];
 			grid?: GridRow[];
 			active?: string;
+			panels?: unknown;
 		};
+		panels.set(sanitizePanels(layout.panels));
 		const live = new Set(get(sessions).map((s) => s.id));
 		const seen = new Set<string>();
 		const restored = (layout.panes ?? []).filter(
