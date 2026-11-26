@@ -37,7 +37,7 @@ func TestFixtureClaudePermission(t *testing.T) {
 	if m.Kind != domain.WaitPermission || m.Confidence != domain.ConfidenceHigh {
 		t.Fatalf("match = %+v", m)
 	}
-	if len(m.Prompt.Options) != 3 || m.Prompt.Options[0].Inject.Char != '1' {
+	if len(m.Prompt.Options) != 3 || m.Prompt.Options[0].Hint != "1" {
 		t.Fatalf("options = %+v", m.Prompt.Options)
 	}
 	if m.Prompt.Title != "Do you want to proceed?" {
@@ -68,13 +68,13 @@ func TestFixtureCodexApproval(t *testing.T) {
 	if m.Kind != domain.WaitPermission || m.Confidence != domain.ConfidenceHigh {
 		t.Fatalf("match = %+v", m)
 	}
-	want := []byte{'y', 'a', 'n'}
+	want := []string{"y", "a", "n"}
 	if len(m.Prompt.Options) != len(want) {
 		t.Fatalf("options = %+v", m.Prompt.Options)
 	}
 	for i, o := range m.Prompt.Options {
-		if o.Inject.Kind != KeyChar || o.Inject.Char != want[i] {
-			t.Fatalf("option %d inject = %+v", i, o.Inject)
+		if o.Hint != want[i] {
+			t.Fatalf("option %d hint = %+v", i, o)
 		}
 	}
 }
@@ -88,7 +88,7 @@ func TestFixtureGeminiAllowExec(t *testing.T) {
 	if m.Kind != domain.WaitPermission || m.Confidence != domain.ConfidenceHigh {
 		t.Fatalf("match = %+v", m)
 	}
-	if len(m.Prompt.Options) != 3 || m.Prompt.Options[2].Inject.Char != '3' {
+	if len(m.Prompt.Options) != 3 || m.Prompt.Options[2].Hint != "3" {
 		t.Fatalf("options = %+v", m.Prompt.Options)
 	}
 }
@@ -105,10 +105,11 @@ func TestFixtureOpencodePermission(t *testing.T) {
 	if len(m.Prompt.Options) != 3 {
 		t.Fatalf("options = %+v", m.Prompt.Options)
 	}
-	// Position-mapped injects (spec §7.5: arrows, not keys).
+	// Position-mapped hints (spec §7.5: arrows, not keys).
+	wantHints := []string{"Enter", "↓ 1 + Enter", "↓ 2 + Enter"}
 	for i, o := range m.Prompt.Options {
-		if o.Inject.Kind != KeyArrowSelect || o.Inject.Arrows != i {
-			t.Fatalf("option %d inject = %+v", i, o.Inject)
+		if o.Hint != wantHints[i] {
+			t.Fatalf("option %d hint = %+v", i, o)
 		}
 	}
 	// The modal sits mid-screen — outside DefaultScope(12)'s bottom
@@ -138,8 +139,8 @@ func TestFixtureDevinOptions(t *testing.T) {
 	if m.Kind != domain.WaitOption || len(m.Prompt.Options) != 3 {
 		t.Fatalf("match = %+v", m)
 	}
-	if m.Prompt.Options[1].Inject.Char != '2' {
-		t.Fatalf("option 1 inject = %+v", m.Prompt.Options[1].Inject)
+	if m.Prompt.Options[1].Hint != "2" {
+		t.Fatalf("option 1 hint = %+v", m.Prompt.Options[1])
 	}
 }
 
@@ -154,8 +155,8 @@ func TestFixtureDevinFreetext(t *testing.T) {
 	}
 }
 
-// Negative fixtures: a busy screen must never fabricate buttons (§8.4 —
-// false-positive cost is wrong buttons into a live session).
+// Negative fixtures: a busy screen must never fabricate a prompt card
+// (§8.4 — false-positive cost is a wrong card over a live session).
 func TestCuratedNegatives(t *testing.T) {
 	for _, a := range []Adapter{Claude(), Codex(), Gemini(), Opencode(), Devin()} {
 		s := replay(t, "fixtures/generic/g4/idle.cast") // log scroll + bare $

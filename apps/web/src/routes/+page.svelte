@@ -482,8 +482,8 @@
 		}
 	}
 
-	// Shared spawn landing — palette executes and profile launches both
-	// arrive as a fresh session that gets its own tab + frame.
+	// Shared spawn landing — profile launches arrive as a fresh session
+	// that gets its own tab + frame.
 	async function spawned(s: Session) {
 		// The session exists server-side even if the refetch fails — the
 		// next ws event resyncs; never drop the tab on a read error.
@@ -932,11 +932,7 @@
 	/>
 
 	{#if $paletteOpen}
-		<CommandPalette
-			sessionId={activeSessionId}
-			onspawn={(s) => void spawned(s)}
-			onclose={() => paletteOpen.set(false)}
-		/>
+		<CommandPalette sessionId={activeSessionId} onclose={() => paletteOpen.set(false)} />
 	{/if}
 </div>
 

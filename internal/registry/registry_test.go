@@ -1,5 +1,5 @@
 // Ref: .teos/sections/04 — manifest decode/validate, source priority
-// shadowing, palette search, --help discovery parsing, argv building.
+// shadowing, palette search, --help discovery parsing.
 package registry
 
 import (
@@ -40,97 +40,6 @@ func TestDecodeRejectsBadManifest(t *testing.T) {
 		if _, err := DecodeManifests(strings.NewReader(doc), "custom"); !errors.Is(err, ErrInvalidManifest) {
 			t.Fatalf("doc should fail validation: %q → %v", doc, err)
 		}
-	}
-}
-
-// A flag param renders after the positional templates — `git commit
-// -m x`, never `git -m x commit`.
-func TestBuildFlagOrdering(t *testing.T) {
-	m := &Manifest{
-		ID: "git.commit", Application: "git", Name: "Commit",
-		Parameters: []Parameter{
-			{Name: "message", Type: "string", Required: true, Flag: strp("-m")},
-		},
-		Command:   CommandSpec{Executable: "git", Arguments: []string{"commit"}},
-		Execution: ExecSpec{Risk: "controlled", Confirmation: true},
-	}
-	argv, _, err := m.Build(map[string]any{"message": "wip"}, SessionCtx{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"git", "commit", "-m", "wip"}
-	if strings.Join(argv, " ") != strings.Join(want, " ") {
-		t.Fatalf("argv = %v want %v", argv, want)
-	}
-}
-
-func TestBuildPositionalAndSessionCwd(t *testing.T) {
-	m := &Manifest{
-		ID: "git.branch.create", Application: "git", Name: "Branch",
-		Parameters: []Parameter{{Name: "branch", Type: "string", Required: true}},
-		Command:    CommandSpec{Executable: "git", Arguments: []string{"checkout", "-b", "{branch}"}},
-		Execution:  ExecSpec{Risk: "controlled", WorkingDir: "{session.cwd}"},
-	}
-	argv, cwd, err := m.Build(map[string]any{"branch": "feat/x"}, SessionCtx{Cwd: "/repo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cwd != "/repo" || strings.Join(argv, " ") != "git checkout -b feat/x" {
-		t.Fatalf("argv=%v cwd=%q", argv, cwd)
-	}
-	if _, _, err := m.Build(map[string]any{}, SessionCtx{}); !errors.Is(err, ErrInvalidManifest) {
-		t.Fatalf("missing required param should fail: %v", err)
-	}
-}
-
-func TestBuildEnumAndBoolean(t *testing.T) {
-	m := &Manifest{
-		ID: "x.y", Application: "x", Name: "x",
-		Parameters: []Parameter{
-			{Name: "sh", Type: "enum", Options: []string{"/bin/sh", "/bin/bash"}},
-			{Name: "force", Type: "boolean", Flag: strp("--force")},
-		},
-		Command:   CommandSpec{Executable: "x", Arguments: []string{"{sh}"}},
-		Execution: ExecSpec{Risk: "informational"},
-	}
-	argv, _, err := m.Build(map[string]any{"sh": "/bin/bash", "force": true}, SessionCtx{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(argv, " ") != "x /bin/bash --force" {
-		t.Fatalf("argv = %v", argv)
-	}
-	if _, _, err := m.Build(map[string]any{"sh": "zsh"}, SessionCtx{}); err == nil {
-		t.Fatal("enum violation should fail")
-	}
-}
-
-// An absent optional param must drop its argv element — an empty-string
-// arg would reach execve literally and confuse the child.
-func TestBuildOptionalDrops(t *testing.T) {
-	m := &Manifest{
-		ID: "x.opt", Application: "x", Name: "x",
-		Parameters: []Parameter{
-			{Name: "ref", Type: "string"},
-			{Name: "tag", Type: "string", Flag: strp("--tag")},
-		},
-		Command:   CommandSpec{Executable: "x", Arguments: []string{"show", "{ref}"}},
-		Execution: ExecSpec{Risk: "informational"},
-	}
-	argv, _, err := m.Build(map[string]any{}, SessionCtx{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(argv, " ") != "x show" {
-		t.Fatalf("argv = %v want [x show]", argv)
-	}
-	// Present-but-empty optional flag drops the flag too.
-	argv, _, err = m.Build(map[string]any{"ref": "HEAD", "tag": ""}, SessionCtx{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(argv, " ") != "x show HEAD" {
-		t.Fatalf("argv = %v want [x show HEAD]", argv)
 	}
 }
 
@@ -282,5 +191,3 @@ func TestDiscoverReplacesStale(t *testing.T) {
 		t.Fatal("new sub missing after re-discovery")
 	}
 }
-
-func strp(s string) *string { return &s }

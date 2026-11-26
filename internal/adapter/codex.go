@@ -7,7 +7,7 @@
 //	  Yes, and don't ask again for this command (a)
 //	  No (n)
 //
-// Inject: the bracketed letter key; arrow-select is the fallback when
+// Hint: the bracketed letter key; arrow-select is the fallback when
 // a numbered variant appears. Highest spec drift risk — unverified pin.
 package adapter
 
@@ -87,8 +87,8 @@ func (codexAdapter) Detect(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 			for i, ry := range rows {
 				mm := letterOpt.FindStringSubmatch(s.RowText(ry))
 				opts[i] = PromptOption{
-					Label:  strings.TrimSpace(mm[1]),
-					Inject: Char(mm[2][0] | 0x20), // lowercase letter key
+					Label: strings.TrimSpace(mm[1]),
+					Hint:  string(mm[2][0] | 0x20), // lowercase letter key
 				}
 			}
 			return &StateMatch{

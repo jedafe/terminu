@@ -7,7 +7,7 @@
 	import { FitAddon } from '@xterm/addon-fit';
 	import { SearchAddon } from '@xterm/addon-search';
 	import { Unicode11Addon } from '@xterm/addon-unicode11';
-	import { SessionClient, keystrokeToBytes, type PromptFrame } from '$lib/ws';
+	import { SessionClient, type PromptFrame } from '$lib/ws';
 	import { touchMode, kbdMods } from '$lib/stores';
 	import '@xterm/xterm/css/xterm.css';
 
@@ -35,7 +35,6 @@
 	let searchOpen = $state(false);
 	let searchQ = $state('');
 	let prompt = $state<PromptFrame | null>(null);
-	let freeReply = $state('');
 
 	// Custom scroll thumb — the native viewport scrollbar paints under the
 	// .xterm-screen canvas on every UA (canvas is a positioned sibling), so
@@ -166,7 +165,8 @@
 				if (status !== 'dead') status = 'reconnecting';
 			},
 			// Ref: .teos/sections/05-agent-session-management.md — prompt
-			// overlay. Low-confidence waits get no visual at all.
+			// card (read-only per ADR-007; answers happen in the terminal).
+			// Low-confidence waits get no visual at all.
 			prompt: (p) => {
 				prompt = p;
 			},
@@ -619,41 +619,19 @@
 	{/if}
 
 	{#if prompt}
+		<!-- prompt card — read-only (ADR-007): the detected question and
+		     its options; answering happens in the terminal, not here. -->
 		<div class="poverlay">
 			<div class="ptitle">
 				{prompt.title}
 				<button class="px" aria-label="dismiss" onclick={() => (prompt = null)}>✕</button>
 			</div>
-			{#if prompt.kind === 'freetext' || (prompt.options?.length ?? 0) === 0}
-				<form
-					class="pfree"
-					onsubmit={(e) => {
-						e.preventDefault();
-						if (freeReply) inject(freeReply + '\r');
-						freeReply = '';
-						prompt = null;
-					}}
-				>
-					<input
-						bind:value={freeReply}
-						placeholder="reply…"
-						autocapitalize="off"
-						autocorrect="off"
-						autocomplete="off"
-					/>
-					<button type="submit">send</button>
-				</form>
-			{:else}
+			{#if (prompt.options?.length ?? 0) > 0}
 				<div class="prow">
 					{#each prompt.options as o}
-						<button
-							class="popt"
-							class:def={o.default}
-							onclick={() => {
-								inject(keystrokeToBytes(o.inject));
-								prompt = null;
-							}}>{o.label}</button
-						>
+						<span class="popt" class:def={o.default}>
+							{o.label}{#if o.hint}<kbd class="phint">{o.hint}</kbd>{/if}
+						</span>
 					{/each}
 				</div>
 			{/if}
@@ -822,7 +800,7 @@
 		border-radius: 7px;
 		pointer-events: none;
 	}
-	/* §05 prompt overlay — touch-first action row above the term */
+	/* §05 prompt card — read-only display row above the term (ADR-007) */
 	.poverlay {
 		position: absolute;
 		z-index: 1;
@@ -862,43 +840,29 @@
 		flex-wrap: wrap;
 	}
 	.popt {
-		min-height: 44px;
-		padding: 0 16px;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 32px;
+		padding: 0 12px;
 		border: 1px solid #33415c;
 		border-radius: 8px;
 		background: #1b2536;
 		color: #dbe7f7;
-		font: 14px/1 ui-monospace, monospace;
+		font: 13px/1 ui-monospace, monospace;
 	}
 	.popt.def {
 		background: #1f5c8b;
 		border-color: #2f7cb3;
 	}
-	.popt:active {
-		background: #33415c;
-	}
-	.pfree {
-		display: flex;
-		gap: 8px;
-	}
-	.pfree input {
-		flex: 1;
-		height: 44px;
+	.phint {
+		font: 10px/1 ui-monospace, monospace;
+		color: #9db2ce;
 		border: 1px solid #33415c;
-		border-radius: 8px;
+		border-bottom-width: 2px;
+		border-radius: 4px;
+		padding: 2px 5px;
 		background: #0d1420;
-		color: #e6e6e6;
-		padding: 0 10px;
-		font: 14px ui-monospace, monospace;
-	}
-	.pfree button {
-		height: 44px;
-		padding: 0 14px;
-		border: 1px solid #33415c;
-		border-radius: 8px;
-		background: #1f5c8b;
-		color: #dbe7f7;
-		font: 14px ui-monospace, monospace;
 	}
 	.tools {
 		position: absolute;

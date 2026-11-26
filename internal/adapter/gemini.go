@@ -1,8 +1,8 @@
 // Ref: .teos/specs/adapter-design.md §7.4 — gemini (Gemini CLI).
 // Bordered confirmation prompts: "Allow execution of: '<cmd>'?" with
 // numbered options ("1. Yes, allow once / 2. Yes, allow always /
-// 3. No") and "Apply this change?" edit confirmations. Inject: number
-// keys; Esc denies (client-side mapping to the "No" option).
+// 3. No") and "Apply this change?" edit confirmations. Hint: number
+// keys.
 package adapter
 
 import (

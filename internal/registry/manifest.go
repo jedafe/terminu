@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -183,4 +184,61 @@ func (m *Manifest) Validate() error {
 		return err
 	}
 	return nil
+}
+
+// coerce renders one param value as its argv string form — load-time
+// validation for declared defaults and the cheat-sheet's param display.
+func coerce(p Parameter, raw any) (string, error) {
+	switch p.Type {
+	case "boolean":
+		switch v := raw.(type) {
+		case bool:
+			return strconv.FormatBool(v), nil
+		case string:
+			return strconv.FormatBool(v == "true" || v == "1" || v == "yes"), nil
+		}
+		return "", fmt.Errorf("want boolean")
+	case "number":
+		switch v := raw.(type) {
+		case float64:
+			return strconv.FormatFloat(v, 'f', -1, 64), nil
+		case int, int64:
+			return fmt.Sprintf("%d", v), nil
+		case string:
+			if _, err := strconv.ParseFloat(v, 64); err != nil {
+				return "", fmt.Errorf("want number")
+			}
+			return v, nil
+		}
+		return "", fmt.Errorf("want number")
+	case "enum":
+		s := fmt.Sprint(raw)
+		for _, o := range p.Options {
+			if s == o {
+				return s, nil
+			}
+		}
+		return "", fmt.Errorf("want one of %s", strings.Join(p.Options, ","))
+	case "resource":
+		// A resource resolves through its provider — the caller passes
+		// the provider's object ({id: ...}) or a bare id string.
+		switch v := raw.(type) {
+		case string:
+			if v == "" {
+				return "", fmt.Errorf("empty resource id")
+			}
+			return v, nil
+		case map[string]any:
+			if id, ok := v["id"].(string); ok && id != "" {
+				return id, nil
+			}
+		}
+		return "", fmt.Errorf("want resource id or {id}")
+	default: // string
+		s := fmt.Sprint(raw)
+		if p.Required && s == "" {
+			return "", fmt.Errorf("empty value")
+		}
+		return s, nil
+	}
 }

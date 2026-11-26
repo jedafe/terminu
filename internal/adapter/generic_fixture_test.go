@@ -65,8 +65,8 @@ func TestFixtureG2Menu(t *testing.T) {
 	if len(m.Prompt.Options) != 3 {
 		t.Fatalf("options = %+v", m.Prompt.Options)
 	}
-	if m.Prompt.Options[1].Inject.Kind != KeyArrowSelect || m.Prompt.Options[1].Inject.Arrows != 1 {
-		t.Fatalf("option 1 inject = %+v", m.Prompt.Options[1].Inject)
+	if m.Prompt.Options[1].Hint != "↓ 1 + Enter" {
+		t.Fatalf("option 1 hint = %+v", m.Prompt.Options[1])
 	}
 	if m.Prompt.Title != "Select a deployment target:" {
 		t.Fatalf("title = %q", m.Prompt.Title)
@@ -106,6 +106,6 @@ func TestFixtureG4Idle(t *testing.T) {
 		t.Fatalf("match = %+v", m)
 	}
 	if m.Prompt != nil {
-		t.Fatalf("unknown never carries injectable options: %+v", m.Prompt)
+		t.Fatalf("unknown never carries a prompt card: %+v", m.Prompt)
 	}
 }

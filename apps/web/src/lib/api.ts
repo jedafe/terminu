@@ -4,8 +4,7 @@ export class ApiError extends Error {
 		public code: string,
 		public status: number,
 		msg: string,
-		// Structured error payload — e.g. confirmation_required carries
-		// {confirm_token, argv, expires_in_s} (§04/§09).
+		// Structured error payload attached by the server.
 		public detail?: unknown
 	) {
 		super(msg);
@@ -49,18 +48,14 @@ export const api = {
 	alerts: () => req<Alert[]>('/api/alerts'),
 	ackAlert: (id: number) => req(`/api/alerts/${id}/ack`, { method: 'POST' }),
 	// §04 command intelligence — palette search (context-first when
-	// session_id is given), manifest detail, broker-gated execute.
+	// session_id is given) and manifest detail for the cheat-sheet
+	// (ADR-007: display only — there is no execute route).
 	commands: (q = '', sessionId = '', limit = 50) => {
 		const p = new URLSearchParams({ q, limit: String(limit) });
 		if (sessionId) p.set('session_id', sessionId);
 		return req<CommandSummary[]>(`/api/commands?${p}`);
 	},
 	command: (id: string) => req<CommandManifest>(`/api/commands/${encodeURIComponent(id)}`),
-	executeCommand: (id: string, body: ExecInput) =>
-		req<ExecResult>(`/api/commands/${encodeURIComponent(id)}/execute`, {
-			method: 'POST',
-			body: JSON.stringify(body)
-		}),
 	commandContext: (sessionId: string) =>
 		req<CommandContext>(`/api/commands/context/${encodeURIComponent(sessionId)}`),
 	discovered: (exe?: string) =>
@@ -102,8 +97,8 @@ export interface Session {
 }
 
 // POST /api/sessions contract is {target,cwd,shell,...} — argv/env are
-// server-side-only SpawnRequest fields (manifest execute, profile
-// launch); sending them here is silently dropped, so they're omitted.
+// server-side-only SpawnRequest fields (profile launch); sending them
+// here is silently dropped, so they're omitted.
 export interface SpawnRequest {
 	target?: string;
 	cwd?: string;
@@ -136,7 +131,8 @@ export interface AgentView {
 export interface AgentPromptBody {
 	kind: string;
 	title: string;
-	options: { label: string; inject: Keystroke; default?: boolean }[];
+	// Read-only options — hint is advisory display text (ADR-007).
+	options: { label: string; hint?: string; default?: boolean }[];
 }
 export interface AgentPrompt {
 	state: string;
@@ -145,12 +141,6 @@ export interface AgentPrompt {
 	evidence?: string;
 	region?: { y0: number; y1: number };
 	prompt: AgentPromptBody | null;
-}
-export interface Keystroke {
-	kind: 'char' | 'text' | 'arrow_select' | 'escape';
-	char?: number;
-	text?: string;
-	arrows?: number;
 }
 
 // §05 ack-able alert row — unacknowledged sort first server-side.
@@ -208,22 +198,6 @@ export interface CommandParam {
 	description?: string;
 }
 
-export interface ExecInput {
-	session_id?: string;
-	params?: Record<string, unknown>;
-	cwd?: string;
-	name?: string;
-	cols?: number;
-	rows?: number;
-	confirm_token?: string;
-}
-
-export interface ExecResult {
-	session: Session;
-	argv: string[];
-	manifest_id: string;
-}
-
 // GET /api/commands/context/{session_id} — the live context read the
 // context-first ranking uses (§04 Context actions).
 export interface CommandContext {
@@ -233,14 +207,6 @@ export interface CommandContext {
 	pin_status: string;
 	cwd: string;
 	commands: CommandSummary[];
-}
-
-// confirmation_required (409) detail payload — the token binds to the
-// exact argv the server built; resubmit with it to proceed (§09).
-export interface ConfirmDetail {
-	confirm_token: string;
-	argv: string[];
-	expires_in_s: number;
 }
 
 // ---------- §05 launch profiles ----------

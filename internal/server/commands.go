@@ -1,19 +1,17 @@
 // Ref: .teos/sections/04-command-intelligence.md, §06 (adapters).
-// Palette search, manifest detail, broker-gated execution, context
-// actions, --help discovery, and the adapter pin/fixture surfaces.
+// Palette search, manifest detail, context cheat-sheet, --help
+// discovery, and the adapter pin/fixture surfaces. ADR-007: display
+// only — manifests inform the palette, nothing here executes them.
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/jedafe/terminu/internal/broker"
-	"github.com/jedafe/terminu/internal/domain"
 	"github.com/jedafe/terminu/internal/registry"
-	"github.com/jedafe/terminu/internal/session"
 )
 
 // commandSummary is the palette/list row shape — full manifests only
@@ -94,114 +92,6 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"session_id": id, "processes": procs, "tool": tool,
 		"pin_status": pinStatus, "cwd": cwd, "commands": out,
-	})
-}
-
-// execRequest is POST /api/commands/{id}/execute — params resolve into
-// the manifest's argv templates; session_id supplies {session.cwd}.
-type execRequest struct {
-	SessionID    string         `json:"session_id"`
-	Params       map[string]any `json:"params"`
-	Cwd          string         `json:"cwd"`
-	Name         string         `json:"name"`
-	Cols         int            `json:"cols"`
-	Rows         int            `json:"rows"`
-	ConfirmToken string         `json:"confirm_token"`
-}
-
-// executeCommand resolves params → structured argv → broker → spawn.
-// The command runs as a session — output, scrollback, and detection are
-// the same machinery as any terminal (there is no out-of-band exec
-// path). `confirmed` risk needs a confirm_token bound to the argv.
-func (s *Server) executeCommand(w http.ResponseWriter, r *http.Request) {
-	m, ok := s.reg.Get(r.PathValue("id"))
-	if !ok {
-		writeErr(w, 404, "command_not_found", "no such command")
-		return
-	}
-	var req execRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "bad_request", "invalid JSON")
-		return
-	}
-	sctx := registry.SessionCtx{}
-	if req.SessionID != "" {
-		_, cwd, _, _, err := s.mgr.SessionContext(req.SessionID)
-		if err != nil {
-			writeErr(w, 404, "session_not_found", "no live session")
-			return
-		}
-		sctx.Cwd = cwd
-	}
-	argv, cwd, err := m.Build(req.Params, sctx)
-	if err != nil {
-		// The manifest already validated at load — a Build failure is a
-		// param problem (missing required, bad enum/number), i.e. the
-		// request's fault: bad_request, not invalid_manifest.
-		writeErr(w, 400, "bad_request", err.Error())
-		return
-	}
-	if req.Cwd != "" {
-		cwd = req.Cwd
-	}
-	p := principal(r)
-	op := broker.Op{
-		Actor: p, Action: "command.execute", Target: "local",
-		Argv: argv, Risk: broker.Risk(m.Execution.Risk),
-	}
-	if err := s.br.Check(op); err != nil {
-		writeErr(w, 403, "action_restricted", "role may not execute this command")
-		return
-	}
-	// confirmed risk = explicit confirmation token bound to this argv
-	// (§09); controlled rides role policy + the client's confirm dialog.
-	if m.Execution.Risk == "confirmed" {
-		if !broker.VerifyConfirmation(req.ConfirmToken, s.cfg.SessionSecret, p.Username, op.Action, argv) {
-			token := broker.MintConfirmation(s.cfg.SessionSecret, p.Username, op.Action, argv)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(409)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"error": map[string]any{
-					"code": "confirmation_required", "status": 409,
-					"message": "execution requires confirmation",
-					"detail": map[string]any{
-						"confirm_token": token, "argv": argv,
-						"expires_in_s": int(broker.ConfirmTTL.Seconds()),
-					},
-				},
-			})
-			return
-		}
-	}
-	name := req.Name
-	if name == "" {
-		name = m.Name
-	}
-	rec, err := s.mgr.Spawn(r.Context(), domain.SpawnRequest{
-		Name: name, Cwd: cwd, Argv: argv, Cols: req.Cols, Rows: req.Rows,
-	})
-	res := "ok"
-	if err != nil {
-		res = "error"
-	}
-	if aerr := s.br.Audit(r.Context(), op, res); aerr != nil {
-		s.internalErr(w, aerr)
-		return
-	}
-	if err != nil {
-		if errors.Is(err, session.ErrLimit) {
-			writeErr(w, 409, "session_limit", "session limit reached")
-			return
-		}
-		if errors.Is(err, session.ErrExecutable) {
-			writeErr(w, 400, "bad_request", err.Error())
-			return
-		}
-		s.internalErr(w, err)
-		return
-	}
-	writeJSON(w, 201, map[string]any{
-		"session": rec, "argv": argv, "manifest_id": m.ID,
 	})
 }
 

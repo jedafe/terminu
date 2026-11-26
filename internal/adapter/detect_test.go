@@ -32,7 +32,7 @@ func TestAiderMatches(t *testing.T) {
 }
 
 // Devin's internal todo list renders numbered — it must never surface
-// as a waiting-for-input prompt (false positive = wrong inject buttons,
+// as a waiting-for-input prompt (false positive = a wrong prompt card,
 // Rule 7). Status-glyph rows and non-prompt titles both bail to nil.
 func TestDevinTodoListIsNotAPrompt(t *testing.T) {
 	s := screen.New(80, 24, 0)
@@ -75,8 +75,8 @@ func TestAiderOptionPrompt(t *testing.T) {
 	}
 	wantKeys := []string{"y", "n", "d"}
 	for i, o := range m.Prompt.Options {
-		if o.Inject.Kind != KeyText || o.Inject.Text != wantKeys[i] {
-			t.Fatalf("option %d inject = %+v", i, o.Inject)
+		if o.Hint != wantKeys[i] {
+			t.Fatalf("option %d hint = %+v", i, o)
 		}
 	}
 	if !m.Prompt.Options[0].Default {
@@ -117,8 +117,8 @@ func TestG1BracketToken(t *testing.T) {
 	if !m.Prompt.Options[1].Default {
 		t.Fatal("capital N should be default")
 	}
-	if m.Prompt.Options[0].Inject.Text != "y" {
-		t.Fatalf("yes inject = %+v", m.Prompt.Options[0].Inject)
+	if m.Prompt.Options[0].Hint != "y" {
+		t.Fatalf("yes hint = %+v", m.Prompt.Options[0])
 	}
 }
 

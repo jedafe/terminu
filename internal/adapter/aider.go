@@ -80,8 +80,8 @@ func (aiderAdapter) Detect(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 		key := it[1]
 		label := key + it[2] // "(Y)es" → "Yes", "(D)on't" → "Don't"
 		opts = append(opts, PromptOption{
-			Label:  label,
-			Inject: Text(strings.ToLower(key)), // line-mode: char + Enter
+			Label: label,
+			Hint:  strings.ToLower(key), // line-mode: key + Enter
 			// Aider's convention is first-option-on-Enter; its letters
 			// are all uppercase, so case can't pick a default (marking
 			// every option Default made the badge meaningless).

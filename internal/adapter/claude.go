@@ -8,9 +8,8 @@
 //
 // Also cataloged: trust dialog ("Do you trust the files in this
 // folder?"), plan approval ("Approve plan?"), MCP tool approval.
-// Inject: the option's number key; Esc maps to the "No" option
-// client-side. High drift — the pin stays unverified until a real
-// transcript fixture confirms the layout.
+// Hint: the option's number key. High drift — the pin stays
+// unverified until a real transcript fixture confirms the layout.
 package adapter
 
 import (

@@ -20,7 +20,7 @@ var numberedOpt = regexp.MustCompile(`^\s*[│║┃|]?\s*(\d+)[.)]\s+(\S.*)$`)
 
 // letterOpt matches a letter-keyed option row — codex's family:
 // "› Yes, proceed (y)", "No (n)", "[a] always". The trailing or
-// leading bracket holds the inject key.
+// leading bracket holds the answer key.
 var letterOpt = regexp.MustCompile(`^\s*[›>●*·-]?\s*(.+?)\s*[\(\[]([a-zA-Z])[\)\]]\s*$`)
 
 // collectNumbered scans rows [y0, y1) for a contiguous run of
@@ -43,16 +43,16 @@ func collectNumbered(s *screen.Screen, y0, y1 int) []int {
 	return run
 }
 
-// numberedOptions renders the option rows into PromptOptions — number
-// key per spec inject ("1" selects row 1; arrow-select is the fallback
-// when a tool has no number binding).
-func numberedOptions(s *screen.Screen, rows []int, keyInj bool) []PromptOption {
+// numberedOptions renders the option rows into PromptOptions — the
+// number key as hint ("1" selects row 1); arrow-select is the fallback
+// when a tool has no number binding.
+func numberedOptions(s *screen.Screen, rows []int, keyHint bool) []PromptOption {
 	opts := make([]PromptOption, len(rows))
 	for i, y := range rows {
 		m := numberedOpt.FindStringSubmatch(s.RowText(y))
-		o := PromptOption{Label: strings.TrimSpace(m[0]), Inject: ArrowSelect(i)}
-		if keyInj {
-			o.Inject = Char(m[1][0])
+		o := PromptOption{Label: strings.TrimSpace(m[0]), Hint: arrowHint(i)}
+		if keyHint {
+			o.Hint = string(m[1][0])
 		}
 		opts[i] = o
 	}

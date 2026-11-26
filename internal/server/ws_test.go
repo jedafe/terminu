@@ -37,8 +37,8 @@ func TestSendStateFrames(t *testing.T) {
 				Kind:  domain.WaitConfirm,
 				Title: "ok? [y/N]",
 				Options: []adapter.PromptOption{
-					{Label: "yes", Inject: adapter.Char('y'), Default: true},
-					{Label: "no", Inject: adapter.Char('N')},
+					{Label: "yes", Hint: "y", Default: true},
+					{Label: "no", Hint: "n"},
 				},
 			},
 		},
@@ -95,6 +95,10 @@ func TestSendStateFrames(t *testing.T) {
 	opts, _ := pm["options"].([]any)
 	if len(opts) != 2 {
 		t.Fatalf("options: %v", opts)
+	}
+	// The wire contract is {label, hint} — no inject payload (ADR-007).
+	if o0, _ := opts[0].(map[string]any); o0["hint"] != "y" {
+		t.Fatalf("option hint missing on wire: %v", opts[0])
 	}
 	st2 := read()
 	if st2["type"] != "state" || st2["state"] != "working" {

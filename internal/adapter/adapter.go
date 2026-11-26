@@ -4,11 +4,14 @@
 // Adapters are pure functions over the screen model: no I/O, no PTY
 // access — Detect() is callable only through the trigger gate. nil is
 // "not confident" — a false negative degrades to the raw pane, a false
-// positive injects wrong buttons into a live session. Every match
-// carries Evidence; every adapter declares a version Pin.
+// positive shows a wrong prompt card (display-only per ADR-007: nothing
+// here ever reaches the session's input). Every match carries Evidence;
+// every adapter declares a version Pin.
 package adapter
 
 import (
+	"strconv"
+
 	"github.com/jedafe/terminu/internal/domain"
 	"github.com/jedafe/terminu/internal/proc"
 	"github.com/jedafe/terminu/internal/screen"
@@ -73,36 +76,20 @@ type Prompt struct {
 	Options []PromptOption  `json:"options"` // options/confirm/permission; nil for freetext
 }
 
-// PromptOption is one selectable answer.
+// PromptOption is one selectable answer. Hint is advisory display text —
+// the key a human would press to pick it ("1", "y", "↓ 2 + Enter"). It is
+// never sent (ADR-007: the terminal input frame is the sole PTY writer).
 type PromptOption struct {
-	Label   string    `json:"label"`   // "1. Yes"
-	Inject  Keystroke `json:"inject"`  // what answering sends to the PTY
-	Default bool      `json:"default"` // preselected option
+	Label   string `json:"label"`          // "1. Yes"
+	Hint    string `json:"hint,omitempty"` // answering key, display only
+	Default bool   `json:"default"`        // preselected option
 }
 
-// KeystrokeKind tags the inject variant.
-type KeystrokeKind string
-
-const (
-	KeyChar        KeystrokeKind = "char"         // single byte ('y', '1', 'a')
-	KeyText        KeystrokeKind = "text"         // free-text reply + Enter
-	KeyArrowSelect KeystrokeKind = "arrow_select" // arrows ×N + Enter (numbered TUIs)
-	KeyEscape      KeystrokeKind = "escape"       // cancel/deny
-)
-
-// Keystroke is what answering a prompt sends — human-invoked only
-// (ADR-001: the overlay never auto-injects).
-type Keystroke struct {
-	Kind   KeystrokeKind `json:"kind"`
-	Char   byte          `json:"char,omitempty"`
-	Text   string        `json:"text,omitempty"`
-	Arrows int           `json:"arrows,omitempty"` // arrow-downs for KeyArrowSelect
+// arrowHint renders the arrow-select fallback for option i of a numbered
+// TUI menu: ↓×i then Enter (index 0 is already selected → Enter).
+func arrowHint(i int) string {
+	if i == 0 {
+		return "Enter"
+	}
+	return "↓ " + strconv.Itoa(i) + " + Enter"
 }
-
-func Char(c byte) Keystroke   { return Keystroke{Kind: KeyChar, Char: c} }
-func Text(s string) Keystroke { return Keystroke{Kind: KeyText, Text: s} }
-func ArrowSelect(n int) Keystroke {
-	return Keystroke{Kind: KeyArrowSelect, Arrows: n}
-}
-
-var Escape = Keystroke{Kind: KeyEscape}

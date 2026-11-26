@@ -130,7 +130,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/commands", s.requireAuth(s.listCommands))
 	s.mux.HandleFunc("GET /api/commands/context/{session_id}", s.requireAuth(s.commandContext))
 	s.mux.HandleFunc("GET /api/commands/{id}", s.requireAuth(s.getCommand))
-	s.mux.HandleFunc("POST /api/commands/{id}/execute", s.requireAuth(s.executeCommand))
 	s.mux.HandleFunc("GET /api/discovered", s.requireAuth(s.discovered))
 	s.mux.HandleFunc("GET /api/alerts", s.requireAuth(s.listAlerts))
 	s.mux.HandleFunc("POST /api/alerts/{id}/ack", s.requireAuth(s.ackAlert))

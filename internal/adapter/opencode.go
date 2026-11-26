@@ -9,7 +9,7 @@
 //	  Allow    Always    Deny        (button row), or
 //	  ❯ Allow / Always / Reject      (select list)
 //
-// Inject: arrow-select + Enter — the modal options take position, not
+// Hint: arrow-select + Enter — the modal options take position, not
 // keys (spec: "position mapping rather than keys"). Highest drift risk
 // of the launch set — pin stays unverified.
 package adapter
@@ -131,8 +131,8 @@ func collectOpencodeOpts(s *screen.Screen, y0, y1 int) ([]PromptOption, int) {
 			for _, tok := range []string{"Allow", "Always", "Deny", "Reject"} {
 				if have[tok] {
 					opts = append(opts, PromptOption{
-						Label:  tok,
-						Inject: ArrowSelect(len(opts)),
+						Label: tok,
+						Hint:  arrowHint(len(opts)),
 					})
 				}
 			}
@@ -140,8 +140,8 @@ func collectOpencodeOpts(s *screen.Screen, y0, y1 int) ([]PromptOption, int) {
 		}
 		if m := opencodeBtn.FindStringSubmatch(row); m != nil {
 			opts = append(opts, PromptOption{
-				Label:  m[1],
-				Inject: ArrowSelect(len(opts)),
+				Label: m[1],
+				Hint:  arrowHint(len(opts)),
 			})
 			continue
 		}

@@ -1,29 +1,20 @@
 <!-- Ref: .teos/sections/04-command-intelligence.md — the ⌘K palette:
      fuzzy search over /api/commands with context-first ranking for the
-     armed session, a param form per manifest, and a confirm step for
-     risky runs (confirmed risk re-POSTs with the broker's argv token). -->
+     armed session, then a cheat-sheet detail per manifest (ADR-007:
+     display + copy only — nothing here runs the command). -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import {
-		api,
-		ApiError,
-		type CommandManifest,
-		type CommandSummary,
-		type ConfirmDetail,
-		type Session
-	} from '$lib/api';
+	import { api, ApiError, type CommandManifest, type CommandSummary } from '$lib/api';
 
 	let {
 		sessionId = '',
-		onspawn,
 		onclose
 	}: {
 		sessionId?: string;
-		onspawn: (s: Session) => void;
 		onclose: () => void;
 	} = $props();
 
-	type Phase = 'search' | 'params' | 'confirm';
+	type Phase = 'search' | 'detail';
 	let phase = $state<Phase>('search');
 	let q = $state('');
 	let rows = $state<CommandSummary[]>([]);
@@ -31,10 +22,7 @@
 	let busy = $state(false);
 	let err = $state('');
 	let manifest = $state<CommandManifest | null>(null);
-	let values = $state<Record<string, string | boolean>>({});
-	let confirmToken = $state('');
-	let confirmArgv = $state<string[]>([]);
-	let confirmRisk = $state('');
+	let copied = $state(false);
 	let discBusy = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
 	let listEl: HTMLDivElement | undefined = $state();
@@ -81,18 +69,16 @@
 			const c = rows[sel];
 			if (c) void pick(c);
 			else if (canDiscover && !discBusy) void discover();
-		} else if (phase === 'params' && e.key === 'Enter') {
+		} else if (phase === 'detail' && e.key === 'Enter') {
 			e.preventDefault();
-			void submitParams();
-		} else if (phase === 'confirm' && e.key === 'Enter') {
-			e.preventDefault();
-			if (manifest) void run(manifest);
+			void copyArgv();
 		}
 	}
 	function back() {
-		if (phase === 'confirm' || phase === 'params') {
+		if (phase === 'detail') {
 			phase = 'search';
-			confirmToken = '';
+			manifest = null;
+			copied = false;
 			void tick().then(() => inputEl?.focus());
 		} else {
 			onclose();
@@ -104,26 +90,16 @@
 		});
 	}
 
-	// pick → detail → params form (if the manifest declares any) or the
-	// confirm/run path.
+	// pick → the cheat-sheet detail: the argv template with {param}
+	// placeholders intact, plus the param list as reference.
 	async function pick(c: CommandSummary) {
 		if (busy) return;
 		busy = true;
 		err = '';
 		try {
-			const m = await api.command(c.id);
-			manifest = m;
-			values = {};
-			for (const p of m.parameters ?? []) {
-				if (p.default !== undefined) values[p.name] = p.default as string | boolean;
-				else if (p.type === 'boolean') values[p.name] = false;
-				else values[p.name] = '';
-			}
-			if ((m.parameters ?? []).length > 0) {
-				phase = 'params';
-			} else {
-				await stage(m);
-			}
+			manifest = await api.command(c.id);
+			copied = false;
+			phase = 'detail';
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'failed to load command';
 		} finally {
@@ -131,92 +107,21 @@
 		}
 	}
 
-	// stage decides between the pre-run confirm gate and an immediate
-	// execute. `confirmed` risk skips the preview — only the server's
-	// 409 carries the exact argv + bound token (§09).
-	async function stage(m: CommandManifest) {
-		if (m.execution.confirmation && m.execution.risk !== 'confirmed') {
-			confirmArgv = previewArgv(m);
-			confirmRisk = m.execution.risk;
-			confirmToken = '';
-			phase = 'confirm';
-			return;
-		}
-		await run(m);
+	// The cheat-sheet shows the template verbatim — {param} refs stay
+	// as placeholders for the human to fill in at the terminal.
+	function argvTemplate(m: CommandManifest): string[] {
+		return [m.command.executable, ...m.command.arguments];
 	}
-
-	// buildParams strips empties — the server only binds declared names;
-	// a blank optional param stays out of argv entirely.
-	function buildParams(): Record<string, unknown> {
-		const out: Record<string, unknown> = {};
-		for (const p of manifest?.parameters ?? []) {
-			const v = values[p.name];
-			if (v == null || v === '') continue;
-			out[p.name] = v;
-		}
-		return out;
+	function argvText(m: CommandManifest): string {
+		return argvTemplate(m).join(' ');
 	}
-
-	// Display-only argv preview for the controlled-risk gate — template
-	// refs substitute inline, flagged params append after (mirrors
-	// registry.Build ordering; the authoritative argv is always the
-	// server's, shown verbatim for `confirmed` risk).
-	function previewArgv(m: CommandManifest): string[] {
-		const out = [m.command.executable];
-		for (const a of m.command.arguments) {
-			const v = a.replace(/\{([a-zA-Z0-9_.]+)\}/g, (r, name) => {
-				if (name.startsWith('session.')) return r; // server-side context
-				const val = values[name.split('.')[0]];
-				return val !== undefined && val !== null && val !== '' ? String(val) : '';
-			});
-			if (v !== '') out.push(v); // absent optional → element drops (mirrors Build)
-		}
-		for (const p of m.parameters ?? []) {
-			const v = values[p.name];
-			if (!p.flag || v === undefined || v === null || v === '' || v === false) continue;
-			out.push(p.flag);
-			if (v !== true) out.push(String(v));
-		}
-		return out;
-	}
-
-	const missing = $derived(
-		(manifest?.parameters ?? []).some(
-			(p) => p.required && (values[p.name] == null || values[p.name] === '')
-		)
-	);
-
-	async function submitParams() {
-		if (!manifest || missing || busy) return;
-		await stage(manifest);
-	}
-
-	async function run(m: CommandManifest) {
-		if (busy) return; // a held Enter must not spawn twice
-		busy = true;
-		err = '';
+	async function copyArgv() {
+		if (!manifest) return;
 		try {
-			const res = await api.executeCommand(m.id, {
-				session_id: sessionId,
-				params: buildParams(),
-				cols: 120,
-				rows: 30,
-				confirm_token: confirmToken || undefined
-			});
-			onspawn(res.session);
-			onclose();
-		} catch (e) {
-			if (e instanceof ApiError && e.code === 'confirmation_required') {
-				const d = e.detail as ConfirmDetail;
-				confirmToken = d.confirm_token;
-				confirmArgv = d.argv;
-				confirmRisk = 'confirmed';
-				phase = 'confirm';
-			} else {
-				err = e instanceof ApiError ? e.message : 'execute failed';
-			}
-		} finally {
-			busy = false;
+			await navigator.clipboard.writeText(argvText(manifest));
+			copied = true;
+		} catch {
+			err = 'copy failed — clipboard permission denied';
 		}
 	}
 
@@ -300,65 +205,42 @@
 					</button>
 				{/if}
 			</div>
-			<div class="pfoot">↵ run · ↑↓ pick · esc close{sessionId ? ' · ctx-ranked for this pane' : ''}</div>
-		{:else if phase === 'params' && manifest}
+			<div class="pfoot">↵ view · ↑↓ pick · esc close{sessionId ? ' · ctx-ranked for this pane' : ''}</div>
+		{:else if phase === 'detail' && manifest}
 			<div class="phead">
 				<button class="pback" onclick={back}>‹</button>
 				<span class="ptitle">{manifest.name}</span>
 				<span class="capp">{manifest.application}</span>
+				{#if manifest.execution.risk !== 'informational'}
+					<span class="crisk" class:hot={manifest.execution.risk === 'confirmed'}>{manifest.execution.risk}</span>
+				{/if}
 			</div>
 			<div class="pform">
-				{#each manifest.parameters ?? [] as p (p.name)}
-					<label class="pf">
-						<span class="pfl">
-							{p.name}{#if p.required}<span class="preq">*</span>{/if}
-							{#if p.flag}<span class="pflag">{p.flag}</span>{/if}
-						</span>
-						{#if p.type === 'boolean'}
-							<input type="checkbox" bind:checked={values[p.name] as boolean} />
-						{:else if p.type === 'enum'}
-							<select bind:value={values[p.name]}>
-								{#if !p.required}<option value="">—</option>{/if}
-								{#each p.options ?? [] as o (o)}
-									<option value={o}>{o}</option>
-								{/each}
-							</select>
-						{:else}
-							<input
-								class="ptext"
-								type={p.type === 'number' ? 'number' : 'text'}
-								autocapitalize="off"
-								autocorrect="off"
-								spellcheck="false"
-								placeholder={p.description ?? (p.resource ? `${p.resource}…` : '')}
-								bind:value={values[p.name] as string}
-							/>
-						{/if}
-					</label>
-				{/each}
-				{#if err}<div class="perr">{err}</div>{/if}
-				<button class="prun" disabled={busy || missing} onclick={() => void submitParams()}>
-					{busy ? '…' : manifest.execution.confirmation ? 'review' : 'run'}
-				</button>
-			</div>
-		{:else if phase === 'confirm' && manifest}
-			<div class="phead">
-				<button class="pback" onclick={back}>‹</button>
-				<span class="ptitle">{manifest.name}</span>
-				<span class="crisk" class:hot={confirmRisk === 'confirmed'}>{confirmRisk}</span>
-			</div>
-			<div class="pform">
+				{#if manifest.description}<div class="pdesc">{manifest.description}</div>{/if}
 				<div class="pargv">
-					{#each confirmArgv as a, i (i)}<code>{a}</code>{/each}
+					{#each argvTemplate(manifest) as a, i (i)}<code>{a}</code>{/each}
 				</div>
-				{#if confirmRisk === 'confirmed'}
-					<div class="pnote">this command is marked destructive — argv shown is the exact invocation</div>
+				{#if (manifest.parameters ?? []).length > 0}
+					<div class="pparams">
+						{#each manifest.parameters ?? [] as p (p.name)}
+							<div class="pp">
+								<span class="ppn">
+									{p.name}{#if p.required}<span class="preq">*</span>{/if}
+								</span>
+								{#if p.flag}<code class="ppf">{p.flag}</code>{/if}
+								<span class="ppt">{p.type}{p.type === 'enum' && p.options ? `: ${p.options.join(' | ')}` : ''}</span>
+								{#if p.description}<span class="ppd">{p.description}</span>{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+				{#if manifest.execution.working_dir}
+					<div class="pnote">runs in {manifest.execution.working_dir}</div>
 				{/if}
 				{#if err}<div class="perr">{err}</div>{/if}
 				<div class="pcta">
-					<button class="pcancel" onclick={back}>cancel</button>
-					<button class="prun" disabled={busy} onclick={() => manifest && void run(manifest)}>
-						{busy ? '…' : 'run'}
+					<button class="pcopy" onclick={() => void copyArgv()}>
+						{copied ? 'copied ✓' : 'copy command'}
 					</button>
 				</div>
 			</div>
@@ -538,53 +420,13 @@
 		max-height: 60dvh;
 		overflow-y: auto;
 	}
-	.pf {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-	.pfl {
-		width: 130px;
-		flex-shrink: 0;
-		font: 12px ui-monospace, monospace;
-		color: #9db2ce;
-	}
 	.preq {
 		color: #f0b429;
 		margin-left: 3px;
 	}
-	.pflag {
-		display: block;
-		font-size: 10px;
-		color: #4a5568;
-	}
-	.pf input[type='checkbox'] {
-		width: 20px;
-		height: 20px;
-		accent-color: #4cc9f0;
-	}
-	.pf select {
-		flex: 1;
-		background: #141b26;
-		color: #d7e1f0;
-		border: 1px solid #22304a;
-		border-radius: 7px;
-		font: 13px ui-monospace, monospace;
-		padding: 8px;
-	}
-	.ptext {
-		flex: 1;
-		min-width: 0;
-		background: #141b26;
-		border: 1px solid #22304a;
-		border-radius: 7px;
-		color: #d7e1f0;
-		font: 13px ui-monospace, monospace;
-		padding: 8px 10px;
-		outline: none;
-	}
-	.ptext:focus {
-		border-color: #4cc9f0;
+	.pdesc {
+		font: 12px ui-monospace, monospace;
+		color: #9db2ce;
 	}
 	.pargv {
 		display: flex;
@@ -604,6 +446,37 @@
 		font: 11px ui-monospace, monospace;
 		color: #d0a24a;
 	}
+	.pparams {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.pp {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		flex-wrap: wrap;
+		font: 12px ui-monospace, monospace;
+	}
+	.ppn {
+		color: #9db2ce;
+	}
+	.ppf {
+		color: #cfe3ff;
+		background: #141b26;
+		border: 1px solid #22304a;
+		border-radius: 5px;
+		padding: 1px 6px;
+		font-size: 11px;
+	}
+	.ppt {
+		color: #4a5568;
+		font-size: 11px;
+	}
+	.ppd {
+		color: #3d4d68;
+		font-size: 11px;
+	}
 	.perr {
 		font: 12px ui-monospace, monospace;
 		color: #ff8080;
@@ -613,7 +486,7 @@
 		gap: 8px;
 		justify-content: flex-end;
 	}
-	.prun {
+	.pcopy {
 		min-height: 42px;
 		padding: 0 22px;
 		border: 1px solid #1d3550;
@@ -622,19 +495,7 @@
 		color: #4cc9f0;
 		font: 13px ui-monospace, monospace;
 	}
-	.prun:disabled {
-		opacity: 0.4;
-	}
-	.prun:active {
+	.pcopy:active {
 		background: #1c2a44;
-	}
-	.pcancel {
-		min-height: 42px;
-		padding: 0 16px;
-		border: 1px solid #22304a;
-		border-radius: 9px;
-		background: transparent;
-		color: #6b7f9e;
-		font: 13px ui-monospace, monospace;
 	}
 </style>

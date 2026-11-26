@@ -68,8 +68,8 @@ func detectG1(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 				Kind:  domain.WaitConfirm,
 				Title: strings.TrimSpace(g1Re.ReplaceAllString(line, "")),
 				Options: []PromptOption{
-					{Label: "Yes", Inject: Text("y"), Default: yesDef},
-					{Label: "No", Inject: Text("n"), Default: noDef},
+					{Label: "Yes", Hint: "y", Default: yesDef},
+					{Label: "No", Hint: "n", Default: noDef},
 				},
 			},
 			Region:   Region{Y0: y, Y1: y + 1},
@@ -80,7 +80,7 @@ func detectG1(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 }
 
 // G2: numbered/lettered list in the bottom region with the cursor at or
-// below it → option (arrow-select inject). The list is the last
+// below it → option (arrow-select hint). The list is the last
 // contiguous run of ≥2 item lines in the band; the option above the
 // block supplies the title when one exists.
 func detectG2(s *screen.Screen, ctx *SessionCtx) *StateMatch {
@@ -130,8 +130,8 @@ func detectG2(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 	opts := make([]PromptOption, len(items))
 	for i, y := range items {
 		opts[i] = PromptOption{
-			Label:  strings.TrimSpace(s.RowText(y)),
-			Inject: ArrowSelect(i),
+			Label: strings.TrimSpace(s.RowText(y)),
+			Hint:  arrowHint(i),
 		}
 	}
 	return &StateMatch{
