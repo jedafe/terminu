@@ -112,8 +112,13 @@
 	let fErr = $state(''),
 		editId = $state(0);
 	const argvOf = (s: string) => s.trim().split(/\s+/).filter(Boolean);
+	const dupeVar = $derived.by(() => {
+		const names = fVars.map((v) => v.name.trim()).filter(Boolean);
+		return new Set(names).size !== names.length;
+	});
 	const valid = $derived(
 		fName.trim() !== '' &&
+			!dupeVar &&
 			(fArgv.trim() !== '' || fShell !== '' || fVars.some((v) => v.argv.trim() !== ''))
 	);
 	async function saveProfile() {
@@ -202,6 +207,7 @@
 					<button class="cx sm" onclick={() => (fVars = fVars.filter((_, j) => j !== i))}>✕</button>
 				</div>
 			{/each}
+			{#if dupeVar}<div class="merr">variant names must be unique</div>{/if}
 			{#if fErr}<div class="merr">{fErr}</div>{/if}
 			<div class="mcta">
 				<button class="msave" disabled={!valid} onclick={() => void saveProfile()}>

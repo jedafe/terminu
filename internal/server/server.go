@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -479,11 +480,26 @@ func (s *Server) scrollback(w http.ResponseWriter, r *http.Request) {
 	// ?tail=N returns the last N retained bytes — the panel preview's
 	// bounded read (catalog: paged scrollback + tail).
 	if tail, _ := strconv.Atoi(r.URL.Query().Get("tail")); tail > 0 && len(data) > tail {
-		offset = len(data) - tail
+		offset = tailStart(data, tail)
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Total-Size", strconv.Itoa(len(data)))
 	_, _ = w.Write(data[offset:])
+}
+
+// tailStart picks the ?tail=N cut — the naive cut can land mid-line
+// (and mid-rune); snap forward to a line boundary so previews never
+// render a garbled first line. No newline in the window → keep the cut
+// (one huge line is still the true tail).
+func tailStart(data []byte, tail int) int {
+	off := len(data) - tail
+	if off == 0 || data[off-1] == '\n' {
+		return off
+	}
+	if nl := bytes.IndexByte(data[off:], '\n'); nl >= 0 {
+		off += nl + 1
+	}
+	return off
 }
 
 // purgeLog is DELETE /api/sessions/{id}/log — drops only the transition

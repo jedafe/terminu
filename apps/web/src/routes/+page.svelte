@@ -434,6 +434,28 @@
 		panels.update((p) => ({ ...p, right: { ...p.right, open: false } }));
 	}
 
+	// An opening overlay panel covers the grid — a cell picker left
+	// floating above it (z40 > panel z21) would be unreachable UI.
+	$effect(() => {
+		if (!wide && ($panels.left.open || $panels.right.open)) pickCell = null;
+	});
+	// prompts entries belong to live sessions — prune on list refresh
+	// so ended sessions don't accumulate as null tombstones. Panes
+	// count as live: a ws frame can land before refreshSessions lists
+	// a just-spawned session.
+	$effect(() => {
+		const ids = new Set([...$sessions.map((s) => s.id), ...$panes.map((p) => p.sessionId)]);
+		prompts.update((m) => {
+			let changed = false;
+			const n: typeof m = {};
+			for (const k of Object.keys(m)) {
+				if (ids.has(k)) n[k] = m[k];
+				else changed = true;
+			}
+			return changed ? n : m;
+		});
+	});
+
 	// Panel edge drag — same idiom as pairDrag: clamped px width, a
 	// tap without drag resets to the default.
 	function panelDrag(e: PointerEvent, side: 'left' | 'right') {

@@ -144,10 +144,16 @@ func validateProfile(in profileIn) (name string, argv []string, envJSON, cwd, re
 	if len(variants) > 8 {
 		return fail(errors.New("too many variants"))
 	}
-	for _, v := range variants {
-		if strings.TrimSpace(v.Name) == "" || len(v.Name) > 64 {
+	seenVar := map[string]bool{}
+	for i, v := range variants {
+		variants[i].Name = strings.TrimSpace(v.Name)
+		if variants[i].Name == "" || len(variants[i].Name) > 64 {
 			return fail(errors.New("variant name required (≤64 chars)"))
 		}
+		if seenVar[variants[i].Name] {
+			return fail(errors.New("variant " + variants[i].Name + ": duplicate name"))
+		}
+		seenVar[variants[i].Name] = true
 		if len(v.Argv) == 0 || strings.TrimSpace(v.Argv[0]) == "" {
 			return fail(errors.New("variant " + v.Name + ": argv[0] required"))
 		}

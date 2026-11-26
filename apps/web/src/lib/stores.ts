@@ -135,7 +135,12 @@ export function wideLayout(): boolean {
 	return typeof matchMedia !== 'undefined' && matchMedia('(min-width: 900px)').matches;
 }
 
+// A user panel gesture before restoreWorkspace settles wins over the
+// restored layout — restore skips the panel block entirely.
+let panelsTouched = false;
+
 export function togglePanel(side: 'left' | 'right') {
+	panelsTouched = true;
 	panels.update((p) => {
 		const next = { ...p, [side]: { ...p[side], open: !p[side].open } };
 		// Overlay drawers: one at a time — opening one closes the other.
@@ -147,6 +152,7 @@ export function togglePanel(side: 'left' | 'right') {
 	});
 }
 export function setPanelWidth(side: 'left' | 'right', w: number) {
+	panelsTouched = true;
 	panels.update((p) => ({
 		...p,
 		[side]: { ...p[side], w: clampPanelW(w) }
@@ -180,6 +186,7 @@ export const rightView = writable<'session' | 'commands'>('session');
 export const leftView = writable<'sessions' | 'profiles'>('sessions');
 // ⌘K / ⌘ = "open the right panel on the commands view".
 export function openCommands() {
+	panelsTouched = true;
 	rightView.set('commands');
 	panels.update((p) => {
 		const next = { ...p, right: { ...p.right, open: true } };
@@ -446,7 +453,7 @@ export async function restoreWorkspace() {
 			active?: string;
 			panels?: unknown;
 		};
-		panels.set(sanitizePanels(layout.panels));
+		if (!panelsTouched) panels.set(sanitizePanels(layout.panels));
 		const live = new Set(get(sessions).map((s) => s.id));
 		const seen = new Set<string>();
 		const restored = (layout.panes ?? []).filter(

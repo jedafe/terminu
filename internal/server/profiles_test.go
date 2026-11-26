@@ -4,6 +4,7 @@ package server
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +46,41 @@ func TestValidateProfileShellVariants(t *testing.T) {
 		Variants: &[]profileVariant{{Name: "bad", Argv: []string{}}},
 	}); err == nil {
 		t.Fatal("expected variant argv error")
+	}
+	// duplicate variant names rejected — launch-by-name would be
+	// ambiguous (first match silently wins otherwise)
+	if _, _, _, _, _, _, _, err = validateProfile(profileIn{
+		Name: sp("x"), Argv: sa("x"),
+		Variants: &[]profileVariant{
+			{Name: "cloud", Argv: []string{"x", "--a"}},
+			{Name: " cloud ", Argv: []string{"x", "--b"}},
+		},
+	}); err == nil {
+		t.Fatal("expected duplicate variant name error")
+	}
+	// variant names normalize on store — lookup by trimmed name hits
+	_, _, _, _, _, _, vj, err = validateProfile(profileIn{
+		Name: sp("x"), Argv: sa("x"),
+		Variants: &[]profileVariant{{Name: " cloud ", Argv: []string{"x", "--a"}}},
+	})
+	if err != nil || !strings.Contains(vj, `"name":"cloud"`) {
+		t.Fatalf("name trim: %v %q", err, vj)
+	}
+}
+
+func TestTailStart(t *testing.T) {
+	data := []byte("line one\nline two\nline three\n")
+	// cut lands mid-line (offset 10, inside "line two") → snaps to 18
+	if got := tailStart(data, 19); string(data[got:]) != "line three\n" {
+		t.Fatalf("snap: offset %d rest %q", got, data[got:])
+	}
+	// no newline in window → keep the raw cut
+	if got := tailStart([]byte("aaaaaaaaaaaaaaaa"), 8); got != 8 {
+		t.Fatalf("no-newline: %d", got)
+	}
+	// cut already on a boundary stays — a whole line isn't dropped
+	if got := tailStart(data, len("line three\n")); string(data[got:]) != "line three\n" {
+		t.Fatalf("aligned: %q", data[got:])
 	}
 }
 
