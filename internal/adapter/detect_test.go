@@ -31,6 +31,28 @@ func TestAiderMatches(t *testing.T) {
 	}
 }
 
+// Devin's internal todo list renders numbered — it must never surface
+// as a waiting-for-input prompt (false positive = wrong inject buttons,
+// Rule 7). Status-glyph rows and non-prompt titles both bail to nil.
+func TestDevinTodoListIsNotAPrompt(t *testing.T) {
+	s := screen.New(80, 24, 0)
+	feed(s, "Tasks\r\n1. [x] inspect the repo\r\n2. [ ] apply the fix\r\n3. [ ] commit\r\n")
+	if m := Devin().Detect(s, ctx()); m != nil {
+		t.Fatalf("todo list must not detect: %+v", m)
+	}
+	s2 := screen.New(80, 24, 0)
+	feed(s2, "working through the plan\r\n1. first step\r\n2. second step\r\n")
+	if m := Devin().Detect(s2, ctx()); m != nil {
+		t.Fatalf("plain numbered list must not detect: %+v", m)
+	}
+	s3 := screen.New(80, 24, 0)
+	feed(s3, "devin CLI — select organization\r\n1) acme-corp\r\n2) dev-team\r\n")
+	m := Devin().Detect(s3, ctx())
+	if m == nil || m.Kind != domain.WaitOption {
+		t.Fatalf("real option menu should still detect: %+v", m)
+	}
+}
+
 func TestAiderOptionPrompt(t *testing.T) {
 	s := screen.New(80, 24, 0)
 	feed(s, "tokens: 4.2k\r\n")

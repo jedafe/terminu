@@ -59,6 +59,26 @@ func numberedOptions(s *screen.Screen, rows []int, keyInj bool) []PromptOption {
 	return opts
 }
 
+// statusGlyphRe leads todo/status rows: "[x]", "[ ]", "•", "✓", "→",
+// braille spinners — a numbered task list is a status display, not an
+// interactive menu. Checked against the text after the N./N) marker.
+var statusGlyphRe = regexp.MustCompile(`^[\[\(✓✔☐□■▪◐●○◌→▶*•·~⠀-⣿-]`)
+
+// statusRow reports whether a numberedOpt-matching line is really a
+// todo/status entry — "1. [x] write tests", "2. → running build".
+func statusRow(line string) bool {
+	m := numberedOpt.FindStringSubmatch(line)
+	return m != nil && statusGlyphRe.MatchString(m[2])
+}
+
+// promptTitleRe marks a title that reads as a prompt — a question, an
+// instruction ending ':', or a select-word. A "Todos"/"Plan"-style
+// heading fails it, which is the honest outcome for a non-interactive
+// list (Rule 7: nil when uncertain).
+var promptTitleRe = regexp.MustCompile(`(?i)\b(select|choose|pick|which|what|enter|confirm|proceed|continue|approve|allow)\b|[?:]\s*$`)
+
+func promptishTitle(title string) bool { return promptTitleRe.MatchString(title) }
+
 // findTitle scans upward from y for the first non-empty line — the
 // question a numbered/lettered block answers. bounded hops keeps a
 // sparse box-drawing row from swallowing the real title.

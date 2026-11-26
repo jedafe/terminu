@@ -48,6 +48,9 @@ func (devinAdapter) Detect(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 			if !numberedOpt.MatchString(line) {
 				continue
 			}
+			if statusRow(line) {
+				continue // "1. [x] …" — todo/status row, not a menu option
+			}
 			head := y
 			for head-1 >= r.Y0 && numberedOpt.MatchString(s.RowText(head-1)) {
 				head--
@@ -56,7 +59,20 @@ func (devinAdapter) Detect(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 			if rows == nil || rows[0] != head {
 				continue
 			}
+			// Any status row inside the run makes the whole block a
+			// status list — devin's internal todo renders numbered and
+			// must never become a prompt (Rule 7: nil when uncertain).
+			status := false
+			for _, ry := range rows {
+				if statusRow(s.RowText(ry)) {
+					status = true
+					break
+				}
+			}
 			ty, title := findTitle(s, head-1, 3)
+			if status || title == "" || !promptishTitle(title) {
+				continue
+			}
 			return &StateMatch{
 				State: domain.StateWaitingForInput,
 				Kind:  domain.WaitOption, Confidence: domain.ConfidenceMedium,
