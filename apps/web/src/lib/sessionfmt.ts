@@ -1,9 +1,13 @@
 // Shared session-list formatting — used by +page rows and the panels.
-// Store reads via get() stay reactive when invoked from templates.
-import { get } from 'svelte/store';
+// fromStore().current reads track inside $derived/$effect (runes) and
+// fall back to a plain snapshot elsewhere — templates stay live.
+import { fromStore } from 'svelte/store';
 import type { Session } from './api';
 import type { Pane } from './stores';
 import { agentStates, sessions, LIVE_STATES } from './stores';
+
+const sess$ = fromStore(sessions);
+const agents$ = fromStore(agentStates);
 
 export function isLive(s: Session) {
 	return LIVE_STATES.has(s.state);
@@ -12,14 +16,14 @@ export function isFinished(s: Session) {
 	return !isLive(s);
 }
 export function sessionOf(id: string): Session | undefined {
-	return get(sessions).find((s) => s.id === id);
+	return sess$.current.find((s) => s.id === id);
 }
 // §05: a low-confidence wait ("may be waiting") is never promoted to
 // the needs-you rank — AGENTS.md: unknown shows the hint only. And a
 // finished session is never "needs you": its agent state freezes at
 // the last detection, which may still read waiting-for-input.
 export function needsYouId(id: string) {
-	const a = get(agentStates)[id];
+	const a = agents$.current[id];
 	const s = sessionOf(id);
 	return !!s && isLive(s) && a?.state === 'waiting-for-input' && a.confidence !== 'low';
 }
@@ -40,7 +44,7 @@ export function fmtAgo(now: number, iso?: string) {
 // §05 row subline: waiting → how long it's been waiting; finished →
 // terminal state + when it ended; live → foreground process/state.
 export function subLabel(s: Session, now: number) {
-	const a = get(agentStates)[s.id];
+	const a = agents$.current[s.id];
 	// Lifecycle beats detection: a session that exited while waiting
 	// shows its terminal state, not a stale "waiting".
 	if (isFinished(s)) {
@@ -62,12 +66,12 @@ export function detachedOf(s: Session) {
 	return s.detached && isLive(s);
 }
 export function toolBadge(s: Session) {
-	return get(agentStates)[s.id]?.tool ?? '';
+	return agents$.current[s.id]?.tool ?? '';
 }
 // §06 pin badge — only `unverified` surfaces (a probed binary that
 // failed the adapter's version constraint); unknown = still probing.
 export function pinUnv(id: string) {
-	return get(agentStates)[id]?.pin_status === 'unverified';
+	return agents$.current[id]?.pin_status === 'unverified';
 }
 
 export function label(s: Session | undefined): string {
@@ -82,6 +86,6 @@ export function tabLabel(p: Pane): string {
 	const s = sessionOf(p.sessionId);
 	if (!s) return '?';
 	if (s.name) return s.name;
-	const a = get(agentStates)[p.sessionId];
+	const a = agents$.current[p.sessionId];
 	return a?.tool || a?.process || s.shell.split('/').pop() || s.id;
 }

@@ -83,8 +83,12 @@
 	const argvText = (pr: LaunchProfile) => (pr.argv ?? []).join(' ') || pr.shell;
 	function toggleNew() {
 		newopen = !newopen;
-		if (newopen) void refreshProfiles();
 	}
+	// +new can be opened from outside (topbar + / empty-grid button via
+	// bind:newopen) — fetch profiles on any transition to open.
+	$effect(() => {
+		if (newopen) void refreshProfiles();
+	});
 	async function pick(fn: () => Promise<void> | void) {
 		err = '';
 		try {

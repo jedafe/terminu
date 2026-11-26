@@ -319,6 +319,8 @@
 	.cmdview {
 		display: flex;
 		flex-direction: column;
+		flex: 1;
+		min-width: 0;
 		height: 100%;
 		background: #0d1117;
 		overflow: hidden;

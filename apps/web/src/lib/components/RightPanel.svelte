@@ -57,7 +57,15 @@
 	let rn = $state(''),
 		rnDirty = $state(false),
 		rnErr = $state('');
+	let lastRnId = '';
 	$effect(() => {
+		// A different session discards an unsubmitted rename — showing
+		// the old session's draft under a new header would lie.
+		if (sessionId !== lastRnId) {
+			lastRnId = sessionId;
+			rnDirty = false;
+			rnErr = '';
+		}
 		if (!rnDirty) rn = sess?.name ?? '';
 	});
 	async function saveRename() {

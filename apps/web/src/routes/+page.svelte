@@ -343,8 +343,20 @@
 			}
 		};
 		window.addEventListener('keydown', pal);
-		const syncWide = () => (wide = wideLayout());
+		// Crossing below the breakpoint turns both docked panels into
+		// stacked overlays — collapse the right one so the nav rail
+		// (the likelier intent on a small screen) stays reachable.
+		const syncWide = () => {
+			wide = wideLayout();
+			const p = get(panels);
+			if (!wide && p.left.open && p.right.open)
+				panels.update((q) => ({ ...q, right: { ...q.right, open: false } }));
+		};
 		window.addEventListener('resize', syncWide);
+		// Panel open/close/resize/view state persists through the
+		// workspace layout — one subscription covers every mutation
+		// path (topbar toggles, ⌘K, scrim, drags, restore).
+		const unsubPanels = panels.subscribe(() => scheduleSave());
 		const clock = setInterval(() => (now = Date.now()), 15000);
 		void (async () => {
 			await refreshSessions();
@@ -360,6 +372,7 @@
 		})();
 		return () => {
 			clearInterval(clock);
+			unsubPanels();
 			cleanupDnd();
 			window.removeEventListener('keydown', pal);
 			window.removeEventListener('resize', syncWide);
@@ -1012,6 +1025,9 @@
 		flex-direction: column;
 		gap: 2px;
 		min-height: 0;
+		/* Flex-row child of .body — without this a wide terminal's
+		   min-content defeats the shrink and pushes the panels out. */
+		min-width: 0;
 		background: #06090d;
 	}
 	.grow {
