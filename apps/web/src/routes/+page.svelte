@@ -374,6 +374,10 @@
 			} finally {
 				panelsReady = true;
 			}
+			// A workspace saved on desktop with both panels open restores
+			// as two stacked overlays below 900px — run the collapse now
+			// (resize only fires on changes, not at boot).
+			syncWide();
 			wireEvents();
 			if ($panes.length === 0) {
 				const live = $sessions.find((s) => isLive(s));
