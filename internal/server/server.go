@@ -476,6 +476,11 @@ func (s *Server) scrollback(w http.ResponseWriter, r *http.Request) {
 	if offset < 0 || offset > len(data) {
 		offset = 0
 	}
+	// ?tail=N returns the last N retained bytes — the panel preview's
+	// bounded read (catalog: paged scrollback + tail).
+	if tail, _ := strconv.Atoi(r.URL.Query().Get("tail")); tail > 0 && len(data) > tail {
+		offset = len(data) - tail
+	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Total-Size", strconv.Itoa(len(data)))
 	_, _ = w.Write(data[offset:])

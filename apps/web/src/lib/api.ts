@@ -55,6 +55,21 @@ export const api = {
 		return req<CommandSummary[]>(`/api/commands?${p}`);
 	},
 	command: (id: string) => req<CommandManifest>(`/api/commands/${encodeURIComponent(id)}`),
+	commandContext: (id: string) =>
+		req<ContextResult>(`/api/commands/context/${id}`),
+	// §05 prompt card — the REST view for sessions with no live WS
+	// attach feeding the prompts store (finished/detached panes).
+	agentPrompt: (id: string) =>
+		req<AgentPromptResp>(`/api/agents/${id}/prompt`),
+	// scrollback is octet-stream (no envelope) — raw tail text for the
+	// right panel's preview pane.
+	scrollback: async (id: string, tail = 49152) => {
+		const res = await fetch(`/api/sessions/${id}/scrollback?tail=${tail}`, {
+			credentials: 'same-origin'
+		});
+		if (!res.ok) throw new ApiError('internal', res.status, res.statusText);
+		return res.text();
+	},
 	discovered: (exe?: string) =>
 		req<CommandSummary[]>(exe ? `/api/discovered?exe=${encodeURIComponent(exe)}` : '/api/discovered'),
 	adapters: () => req<AdapterPin[]>('/api/adapters'),
@@ -161,6 +176,28 @@ export interface CommandSummary {
 	context?: boolean;
 }
 
+// GET /api/commands/context/{id} — the session's live tool/procs/cwd
+// plus the manifests that context matched (the commands view's
+// empty-query list).
+export interface ContextResult {
+	session_id: string;
+	processes: string[];
+	tool: string;
+	pin_status: string;
+	cwd: string;
+	commands: CommandSummary[];
+}
+
+// GET /api/agents/{id}/prompt — current detection + prompt card.
+export interface AgentPromptResp {
+	state: string;
+	kind?: string;
+	confidence?: string;
+	region?: string;
+	evidence?: string;
+	prompt?: AgentPromptBody | null;
+}
+
 // Full manifest — detail route only (adapter-manifest-format.md).
 export interface CommandManifest {
 	id: string;
@@ -189,6 +226,12 @@ export interface CommandParam {
 
 // ---------- §05 launch profiles ----------
 
+// Named alternate argv — the +new menu's sub-selection rows.
+export interface ProfileVariant {
+	name: string;
+	argv: string[];
+}
+
 export interface LaunchProfile {
 	id: number;
 	name: string;
@@ -197,6 +240,8 @@ export interface LaunchProfile {
 	env: Record<string, string>;
 	cwd: string;
 	resume_cmd: string[] | null;
+	shell: string;
+	variants: ProfileVariant[] | null;
 }
 
 export interface ProfileInput {
@@ -206,10 +251,13 @@ export interface ProfileInput {
 	env?: Record<string, string>;
 	cwd?: string;
 	resume_cmd?: string[];
+	shell?: string;
+	variants?: ProfileVariant[];
 }
 
 export interface LaunchOpts {
 	resume?: boolean;
+	variant?: string;
 	name?: string;
 	cwd?: string;
 	cols?: number;
