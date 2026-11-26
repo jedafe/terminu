@@ -5,7 +5,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import interact from 'interactjs';
-	import { api, type Session } from '$lib/api';
+	import { api, ApiError, type Session } from '$lib/api';
 	import {
 		sessions,
 		panes,
@@ -76,6 +76,9 @@
 	let cellCount = $derived($grid.reduce((n, r) => n + r.cells.length, 0));
 	// Which frame's session-switcher is open ("r:c"), or null.
 	let pickCell = $state<string | null>(null);
+	// Boot auto-spawn failure — the empty grid stays up with this under
+	// the "open a session" button so a dead spawn isn't silent.
+	let bootErr = $state('');
 	// The armed frame — tab clicks route their session here.
 	let focusCell = $state<string | null>(null);
 	let armedCell = $derived(focusCell ?? ($activePane ? cellPos($grid, $activePane) : null));
@@ -355,19 +358,30 @@
 		window.addEventListener('resize', syncWide);
 		// Panel open/close/resize/view state persists through the
 		// workspace layout — one subscription covers every mutation
-		// path (topbar toggles, ⌘K, scrim, drags, restore).
-		const unsubPanels = panels.subscribe(() => scheduleSave());
+		// path (topbar toggles, ⌘K, scrim, drags). Suppressed until the
+		// first restore settles so the hydrated value isn't written back.
+		let panelsReady = false;
+		const unsubPanels = panels.subscribe(() => {
+			if (panelsReady) scheduleSave();
+		});
 		const clock = setInterval(() => (now = Date.now()), 15000);
 		void (async () => {
 			await refreshSessions();
 			await refreshAgents();
 			await refreshAlerts();
-			await restoreWorkspace();
+			try {
+				await restoreWorkspace();
+			} finally {
+				panelsReady = true;
+			}
 			wireEvents();
 			if ($panes.length === 0) {
 				const live = $sessions.find((s) => isLive(s));
 				if (live) newPane(live.id);
-				else await spawn().catch(() => {});
+				else
+					await spawn().catch((e) => {
+						bootErr = e instanceof ApiError ? e.message : 'spawn failed';
+					});
 			}
 		})();
 		return () => {
@@ -755,6 +769,7 @@
 		{#if $panes.length === 0}
 			<div class="empty-main">
 				<button class="bigspawn" onclick={openNew}>open a session</button>
+				{#if bootErr}<div class="sperr">{bootErr}</div>{/if}
 			</div>
 		{/if}
 	</main>
@@ -1232,5 +1247,10 @@
 		background: #141b26;
 		color: #9db2ce;
 		font: 15px ui-monospace, monospace;
+	}
+	.sperr {
+		margin-top: 14px;
+		font: 11px ui-monospace, monospace;
+		color: #ff8080;
 	}
 </style>

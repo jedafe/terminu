@@ -53,6 +53,21 @@ func rowToProfile(row gen.LaunchProfile) profileOut {
 	return p
 }
 
+// toolOf derives the adapter-binding tool name from a profile's launch
+// argv — main argv[0] first, then the first variant's (basename so a
+// path argv[0] like /usr/bin/claude still binds "claude").
+func toolOf(p profileOut) string {
+	if len(p.Argv) > 0 {
+		return filepath.Base(p.Argv[0])
+	}
+	for _, v := range p.Variants {
+		if len(v.Argv) > 0 {
+			return filepath.Base(v.Argv[0])
+		}
+	}
+	return ""
+}
+
 // profileIn is POST/PATCH input — every field optional on PATCH; the
 // pointer fields record which fields the client actually sent (JSON
 // arrays can't distinguish "absent" from "[]" with a plain struct on
@@ -184,16 +199,14 @@ func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
 	if in.Tool != nil {
 		tool = strings.TrimSpace(*in.Tool)
 	}
-	if tool == "" && len(argv) > 0 {
-		// Default the adapter binding to the binary basename — a path
-		// argv[0] (/usr/bin/claude) must still resolve pins/context by
-		// tool name ("claude").
-		tool = filepath.Base(argv[0])
-	}
-	// Variant-only profile (e.g. a shell session + named argvs): the
-	// first variant's executable is the tool stand-in.
-	if tool == "" && in.Variants != nil && len(*in.Variants) > 0 && len((*in.Variants)[0].Argv) > 0 {
-		tool = filepath.Base((*in.Variants)[0].Argv[0])
+	if tool == "" {
+		// Default the adapter binding to the launch executable —
+		// variant-only profiles bind the first variant's argv[0].
+		vars := []profileVariant{}
+		if in.Variants != nil {
+			vars = *in.Variants
+		}
+		tool = toolOf(profileOut{Argv: argv, Variants: vars})
 	}
 	if argv == nil {
 		argv = []string{} // column stores a JSON array — never "null"
@@ -232,11 +245,14 @@ func (s *Server) patchProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	// PATCH merges: fields the client didn't send keep their value.
 	out := rowToProfile(cur)
+	// What the pre-patch argv auto-derived — a stored tool still equal
+	// to it was never customized, so it follows the new argv below.
+	oldDerived := toolOf(out)
 	if in.Name != nil {
 		out.Name = *in.Name
 	}
 	if in.Tool != nil {
-		out.Tool = *in.Tool
+		out.Tool = strings.TrimSpace(*in.Tool)
 	}
 	if in.Argv != nil {
 		out.Argv = *in.Argv
@@ -270,11 +286,11 @@ func (s *Server) patchProfile(w http.ResponseWriter, r *http.Request) {
 		argv = []string{} // column stores a JSON array — never "null"
 	}
 	ab, _ := json.Marshal(argv)
-	if out.Tool == "" && len(argv) > 0 {
-		out.Tool = filepath.Base(argv[0])
-	}
-	if out.Tool == "" && len(out.Variants) > 0 && len(out.Variants[0].Argv) > 0 {
-		out.Tool = filepath.Base(out.Variants[0].Argv[0])
+	// Tool tracking: an auto-derived tool (empty, or still equal to the
+	// old derivation) re-derives from the merged argv — a customized or
+	// explicitly-sent tool is the caller's override and stays.
+	if in.Tool == nil && (out.Tool == "" || (oldDerived != "" && out.Tool == oldDerived)) {
+		out.Tool = toolOf(out)
 	}
 	if err := s.q.UpdateProfile(r.Context(), gen.UpdateProfileParams{
 		Name: name, Tool: out.Tool, Argv: string(ab), Env: envJSON,

@@ -77,3 +77,18 @@ func TestResolveLaunchArgv(t *testing.T) {
 		t.Fatalf("shell-only: %v %q %v", argv, wrap, err)
 	}
 }
+
+func TestToolOf(t *testing.T) {
+	if got := toolOf(profileOut{Argv: []string{"/usr/bin/claude", "-p"}}); got != "claude" {
+		t.Fatalf("argv basename: %q", got)
+	}
+	if got := toolOf(profileOut{
+		Argv:     []string{},
+		Variants: []profileVariant{{Name: "c", Argv: []string{"/opt/devin", "--cloud"}}},
+	}); got != "devin" {
+		t.Fatalf("variant fallback: %q", got)
+	}
+	if got := toolOf(profileOut{}); got != "" {
+		t.Fatalf("empty: %q", got)
+	}
+}
