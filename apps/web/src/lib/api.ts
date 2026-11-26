@@ -62,7 +62,7 @@ export const api = {
 			body: JSON.stringify(body)
 		}),
 	commandContext: (sessionId: string) =>
-		req<CommandContext>(`/api/commands/context/${sessionId}`),
+		req<CommandContext>(`/api/commands/context/${encodeURIComponent(sessionId)}`),
 	discovered: (exe?: string) =>
 		req<CommandSummary[]>(exe ? `/api/discovered?exe=${encodeURIComponent(exe)}` : '/api/discovered'),
 	adapters: () => req<AdapterPin[]>('/api/adapters'),
@@ -101,6 +101,9 @@ export interface Session {
 	detached?: boolean;
 }
 
+// POST /api/sessions contract is {target,cwd,shell,...} — argv/env are
+// server-side-only SpawnRequest fields (manifest execute, profile
+// launch); sending them here is silently dropped, so they're omitted.
 export interface SpawnRequest {
 	target?: string;
 	cwd?: string;
@@ -108,8 +111,6 @@ export interface SpawnRequest {
 	name?: string;
 	cols?: number;
 	rows?: number;
-	argv?: string[];
-	env?: Record<string, string>;
 }
 
 export interface Workspace {

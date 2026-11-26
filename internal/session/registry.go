@@ -123,11 +123,21 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 			if !changed {
 				return
 			}
-			r.m.events.Pub(Event{
+			// Emit the session's whole last state, not just pin_status —
+			// clients merge agent.state fields wholesale, so a frame
+			// missing kind/confidence would clobber a real waiting match
+			// (and could promote a low-confidence wait into needs-you).
+			u := r.current(s.rec.ID)
+			ev := Event{
 				Type: "agent.state", SessionID: s.rec.ID,
 				Process: fg.Name(), Tool: tool,
-				State: r.lastState(s.rec.ID), PinStatus: st,
-			})
+				State: u.State, PinStatus: st,
+			}
+			if u.Match != nil {
+				ev.Kind = u.Match.Kind
+				ev.Confidence = u.Match.Confidence
+			}
+			r.m.events.Pub(ev)
 		})
 	}
 

@@ -468,17 +468,26 @@
 	}
 
 	async function spawn(shell?: string) {
-		shellPick = false;
-		const s = await api.spawn({ cols: 120, rows: 30, shell });
-		await refreshSessions();
-		newPane(s.id);
-		scheduleSave();
+		pErr = '';
+		try {
+			const s = await api.spawn({ cols: 120, rows: 30, shell });
+			shellPick = false;
+			await refreshSessions().catch(() => {});
+			newPane(s.id);
+			scheduleSave();
+		} catch (e) {
+			// Menu stays open with the failure visible — also guards the
+			// boot auto-spawn path against an unhandled rejection.
+			pErr = e instanceof ApiError ? e.message : 'spawn failed';
+		}
 	}
 
 	// Shared spawn landing — palette executes and profile launches both
 	// arrive as a fresh session that gets its own tab + frame.
 	async function spawned(s: Session) {
-		await refreshSessions();
+		// The session exists server-side even if the refetch fails — the
+		// next ws event resyncs; never drop the tab on a read error.
+		await refreshSessions().catch(() => {});
 		newPane(s.id);
 		scheduleSave();
 	}

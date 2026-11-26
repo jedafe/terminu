@@ -54,6 +54,15 @@ var ErrNotFound = errors.New("session not found")
 var ErrLimit = errors.New("session limit reached")
 var ErrStillLive = errors.New("session still live — terminate before delete")
 
+// Sink-side caps every spawn route shares — the HTTP layer rejects
+// oversize dims, internal callers (execute/launch) clamp here. cols×rows
+// cells + scrollback are per-session memory; the winsize field is uint16.
+const (
+	maxPTYCols     = 512
+	maxPTYRows     = 256
+	maxSessionName = 128
+)
+
 func NewManager(cfg *config.Config, q *gen.Queries, bus *EventBus) *Manager {
 	m := &Manager{cfg: cfg, q: q, live: map[string]*ptySession{}, events: bus}
 	m.pins = newPinStore(q)
@@ -108,9 +117,22 @@ func (m *Manager) Spawn(ctx context.Context, req domain.SpawnRequest) (*domain.S
 	if rows <= 0 {
 		rows = 24
 	}
+	// The PTY size casts to uint16 and cols×rows allocates screen cells —
+	// clamp at the sink so every spawn route (HTTP bounds-checks its own
+	// inputs, internal callers don't) stays inside the session budget.
+	if cols > maxPTYCols {
+		cols = maxPTYCols
+	}
+	if rows > maxPTYRows {
+		rows = maxPTYRows
+	}
+	name := req.Name
+	if r := []rune(name); len(r) > maxSessionName {
+		name = string(r[:maxSessionName])
+	}
 	rec := &domain.Session{
 		ID:     newID(),
-		Name:   req.Name,
+		Name:   name,
 		Target: tgt,
 		Cwd:    req.Cwd,
 		Shell:  shell,
