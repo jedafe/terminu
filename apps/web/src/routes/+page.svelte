@@ -34,7 +34,20 @@
 		profiles,
 		refreshProfiles
 	} from '$lib/stores';
-	import type { Pane } from '$lib/stores';
+	import {
+		isLive,
+		isFinished,
+		needsYouId,
+		needsYou,
+		fmtAgo,
+		subLabel,
+		detachedOf,
+		toolBadge,
+		pinUnv,
+		label,
+		tabLabel,
+		sessionOf
+	} from '$lib/sessionfmt';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
 	import KeyBar from '$lib/components/KeyBar.svelte';
 	import InputLine from '$lib/components/InputLine.svelte';
@@ -383,63 +396,6 @@
 		};
 	});
 
-	function isLive(s: Session) {
-		return LIVE_STATES.has(s.state);
-	}
-	function isFinished(s: Session) {
-		return !isLive(s);
-	}
-	// §05: a low-confidence wait ("may be waiting") is never promoted to
-	// the needs-you rank — AGENTS.md: unknown shows the hint only. And a
-	// finished session is never "needs you": its agent state freezes at
-	// the last detection, which may still read waiting-for-input.
-	function needsYouId(id: string) {
-		const a = $agentStates[id];
-		const s = sessionOf(id);
-		return !!s && isLive(s) && a?.state === 'waiting-for-input' && a.confidence !== 'low';
-	}
-	function needsYou(s: Session) {
-		return needsYouId(s.id);
-	}
-
-	function fmtAgo(iso?: string) {
-		if (!iso) return '';
-		const sec = Math.max(0, (now - Date.parse(iso)) / 1000);
-		if (sec < 10) return 'now';
-		if (sec < 60) return `${Math.floor(sec)}s`;
-		if (sec < 3600) return `${Math.floor(sec / 60)}m`;
-		if (sec < 86400) return `${Math.floor(sec / 3600)}h`;
-		return `${Math.floor(sec / 86400)}d`;
-	}
-
-	// §05 row subline: waiting → how long it's been waiting; finished →
-	// terminal state + when it ended; live → foreground process/state.
-	function subLabel(s: Session) {
-		const a = $agentStates[s.id];
-		// Lifecycle beats detection: a session that exited while waiting
-		// shows its terminal state, not a stale "waiting".
-		if (isFinished(s)) {
-			const ago = fmtAgo(s.ended_at);
-			return s.state + (ago ? ` ${ago}` : '');
-		}
-		if (needsYou(s)) return `waiting ${fmtAgo(a?.since)}`;
-		// A low-confidence wait is only ever a hint — "may be waiting",
-		// never the confident "waiting <t>" phrasing (session-state
-		// catalog: unknown carries no options).
-		if (a?.state === 'waiting-for-input' && a.confidence === 'low') {
-			return 'may be waiting';
-		}
-		return a?.process ?? s.state;
-	}
-	// The detached overlay flag: a live session nobody has watched for
-	// longer than TU_RECONNECT_WINDOW_S.
-	function detachedOf(s: Session) {
-		return s.detached && isLive(s);
-	}
-	function toolBadge(s: Session) {
-		return $agentStates[s.id]?.tool ?? '';
-	}
-
 	function scheduleSave() {
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = setTimeout(() => void saveWorkspace(), 1200);
@@ -546,12 +502,6 @@
 		}
 	}
 
-	// §06 pin badge — only `unverified` surfaces (a probed binary that
-	// failed the adapter's version constraint); unknown = still probing.
-	function pinUnv(id: string) {
-		return $agentStates[id]?.pin_status === 'unverified';
-	}
-
 	function openSession(s: Session) {
 		const existing = $panes.find((p) => p.sessionId === s.id);
 		if (existing) {
@@ -613,25 +563,6 @@
 		}
 	}
 
-	function label(s: Session | undefined): string {
-		if (!s) return '?';
-		return s.name || s.shell.split('/').pop() || s.id;
-	}
-
-	// Tab auto-name: an explicit name always wins; otherwise show the
-	// app actually running — curated tool name when an adapter matched,
-	// else the live foreground process; shell basename as the floor.
-	function tabLabel(p: Pane): string {
-		const s = sessionOf(p.sessionId);
-		if (!s) return '?';
-		if (s.name) return s.name;
-		const a = $agentStates[p.sessionId];
-		return a?.tool || a?.process || s.shell.split('/').pop() || s.id;
-	}
-
-	function sessionOf(id: string): Session | undefined {
-		return $sessions.find((s) => s.id === id);
-	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions — gesture layer, not keyboard -->
@@ -775,7 +706,7 @@
 						<span class="dot" class:live={a.level === 'action'} class:dead={a.level === 'warn'} class:needs={a.level === 'action'}></span>
 						<span class="smain">
 							<span class="sname">{a.transition}</span>
-							<span class="ssub">{a.process || a.session_id} · {fmtAgo(a.at)}</span>
+							<span class="ssub">{a.process || a.session_id} · {fmtAgo(now, a.at)}</span>
 						</span>
 						<button class="sact hist" title="acknowledge alert" onclick={(e) => { e.stopPropagation(); void ackAlert(a.id); }}>ack</button>
 					</div>
@@ -967,7 +898,7 @@
 				{#if pinUnv(s.id)}<span class="badge unv" title="adapter pin unverified — binary version outside the tested constraint">unverified</span>{/if}
 			</span>
 			<span class="ssub" class:needs={needsYou(s)}>
-				{subLabel(s)}{#if detachedOf(s)}<span class="det"> · unattended</span>{/if}
+				{subLabel(s, now)}{#if detachedOf(s)}<span class="det"> · unattended</span>{/if}
 			</span>
 		</span>
 		{#if isLive(s)}

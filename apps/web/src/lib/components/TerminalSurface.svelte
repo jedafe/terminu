@@ -16,13 +16,17 @@
 		active = false,
 		onrequestinput,
 		onpull,
-		onpullrelease
+		onpullrelease,
+		onprompt,
+		onpromptclear
 	}: {
 		sessionId: string;
 		active?: boolean;
 		onrequestinput?: () => void;
 		onpull?: (dy: number) => void;
 		onpullrelease?: (dy: number) => void;
+		onprompt?: (p: PromptFrame) => void;
+		onpromptclear?: () => void;
 	} = $props();
 
 	let el: HTMLDivElement;
@@ -157,6 +161,7 @@
 				status = 'dead';
 				dead = true;
 				prompt = null; // no card over an exited session
+				onpromptclear?.();
 				term.write(`\r\n\x1b[2m[process exited ${code}] — close or restart from the session list\x1b[0m\r\n`);
 			},
 			error: (code, msg) => {
@@ -170,9 +175,11 @@
 			// Low-confidence waits get no visual at all.
 			prompt: (p) => {
 				prompt = p;
+				onprompt?.(p);
 			},
 			promptClear: () => {
 				prompt = null;
+				onpromptclear?.();
 			}
 		});
 		client.connect();
