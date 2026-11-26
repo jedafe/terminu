@@ -91,6 +91,8 @@ type LaunchProfile struct {
 	ResumeCmd string `json:"resume_cmd"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	Shell     string `json:"shell"`
+	Variants  string `json:"variants"`
 }
 
 type Session struct {

@@ -10,9 +10,9 @@ import (
 )
 
 const createProfile = `-- name: CreateProfile :one
-INSERT INTO launch_profiles (name, tool, argv, env, cwd, resume_cmd)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, name, tool, argv, env, cwd, resume_cmd, created_at, updated_at
+INSERT INTO launch_profiles (name, tool, argv, env, cwd, resume_cmd, shell, variants)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, tool, argv, env, cwd, resume_cmd, created_at, updated_at, shell, variants
 `
 
 type CreateProfileParams struct {
@@ -22,6 +22,8 @@ type CreateProfileParams struct {
 	Env       string `json:"env"`
 	Cwd       string `json:"cwd"`
 	ResumeCmd string `json:"resume_cmd"`
+	Shell     string `json:"shell"`
+	Variants  string `json:"variants"`
 }
 
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (LaunchProfile, error) {
@@ -32,6 +34,8 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (L
 		arg.Env,
 		arg.Cwd,
 		arg.ResumeCmd,
+		arg.Shell,
+		arg.Variants,
 	)
 	var i LaunchProfile
 	err := row.Scan(
@@ -44,6 +48,8 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (L
 		&i.ResumeCmd,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Shell,
+		&i.Variants,
 	)
 	return i, err
 }
@@ -58,7 +64,7 @@ func (q *Queries) DeleteProfile(ctx context.Context, id int64) error {
 }
 
 const getProfile = `-- name: GetProfile :one
-SELECT id, name, tool, argv, env, cwd, resume_cmd, created_at, updated_at FROM launch_profiles WHERE id = ?
+SELECT id, name, tool, argv, env, cwd, resume_cmd, created_at, updated_at, shell, variants FROM launch_profiles WHERE id = ?
 `
 
 func (q *Queries) GetProfile(ctx context.Context, id int64) (LaunchProfile, error) {
@@ -74,12 +80,14 @@ func (q *Queries) GetProfile(ctx context.Context, id int64) (LaunchProfile, erro
 		&i.ResumeCmd,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Shell,
+		&i.Variants,
 	)
 	return i, err
 }
 
 const listProfiles = `-- name: ListProfiles :many
-SELECT id, name, tool, argv, env, cwd, resume_cmd, created_at, updated_at FROM launch_profiles ORDER BY tool, name
+SELECT id, name, tool, argv, env, cwd, resume_cmd, created_at, updated_at, shell, variants FROM launch_profiles ORDER BY tool, name
 `
 
 func (q *Queries) ListProfiles(ctx context.Context) ([]LaunchProfile, error) {
@@ -101,6 +109,8 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]LaunchProfile, error) {
 			&i.ResumeCmd,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Shell,
+			&i.Variants,
 		); err != nil {
 			return nil, err
 		}
@@ -117,7 +127,8 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]LaunchProfile, error) {
 
 const updateProfile = `-- name: UpdateProfile :exec
 UPDATE launch_profiles SET name = ?, tool = ?, argv = ?, env = ?, cwd = ?,
-    resume_cmd = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    resume_cmd = ?, shell = ?, variants = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
 WHERE id = ?
 `
 
@@ -128,6 +139,8 @@ type UpdateProfileParams struct {
 	Env       string `json:"env"`
 	Cwd       string `json:"cwd"`
 	ResumeCmd string `json:"resume_cmd"`
+	Shell     string `json:"shell"`
+	Variants  string `json:"variants"`
 	ID        int64  `json:"id"`
 }
 
@@ -139,6 +152,8 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) er
 		arg.Env,
 		arg.Cwd,
 		arg.ResumeCmd,
+		arg.Shell,
+		arg.Variants,
 		arg.ID,
 	)
 	return err
