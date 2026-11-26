@@ -484,12 +484,14 @@
 	}
 
 	async function launchProf(id: number, resume = false) {
-		shellPick = false;
+		pErr = '';
 		try {
 			const res = await api.launchProfile(id, { resume, cols: 120, rows: 30 });
+			shellPick = false;
 			await spawned(res.session);
-		} catch {
-			/* launch failed — menu stays put, nothing spawned */
+		} catch (e) {
+			// Menu stays open with the failure visible in .merr.
+			pErr = e instanceof ApiError ? e.message : 'launch failed';
 		}
 	}
 
@@ -514,8 +516,13 @@
 
 	async function delProfile(id: number, e: Event) {
 		e.stopPropagation();
-		await api.deleteProfile(id).catch(() => {});
-		await refreshProfiles();
+		pErr = '';
+		try {
+			await api.deleteProfile(id);
+			await refreshProfiles();
+		} catch (err) {
+			pErr = err instanceof ApiError ? err.message : 'delete failed';
+		}
 	}
 
 	// §06 pin badge — only `unverified` surfaces (a probed binary that

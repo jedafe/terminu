@@ -33,10 +33,18 @@ func (r *Registry) Discover(ctx context.Context, exe string) ([]*Manifest, error
 	if err != nil {
 		return nil, err
 	}
+	// A successful scrape replaces the exe's provisional set wholesale —
+	// subs dropped from --help since the last run leave no stale rows.
+	// On scrape failure the old set survives (better stale than empty).
+	if err := r.q.DeleteDiscoveredManifests(ctx, exe); err != nil {
+		return nil, err
+	}
 	var out []*Manifest
 	for _, s := range subs {
 		m := &Manifest{
-			ID:          exe + "." + s.name,
+			// IDs are canonical dotted-lowercase (idRe) — a CamelCase
+			// sub still validates; argv keeps the real-case token.
+			ID:          strings.ToLower(exe + "." + s.name),
 			Application: exe,
 			Name:        exe + " " + s.name,
 			Description: s.desc,

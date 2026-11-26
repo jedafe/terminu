@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const deleteDiscoveredManifests = `-- name: DeleteDiscoveredManifests :exec
+DELETE FROM command_manifests WHERE source = 'discovered' AND application = ?
+`
+
+// Re-discovery replaces one exe's provisional set wholesale - subs that
+// vanished from --help since the last run leave no stale rows. Scoped
+// per application so other exes' discovered rows survive.
+func (q *Queries) DeleteDiscoveredManifests(ctx context.Context, application string) error {
+	_, err := q.db.ExecContext(ctx, deleteDiscoveredManifests, application)
+	return err
+}
+
 const deleteManifestsBySource = `-- name: DeleteManifestsBySource :exec
 DELETE FROM command_manifests WHERE source = ?
 `

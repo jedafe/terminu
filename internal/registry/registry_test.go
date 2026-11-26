@@ -5,6 +5,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -235,6 +236,50 @@ Flags:
 	subs := parseHelp(help)
 	if len(subs) != 3 || subs[0].name != "serve" || subs[1].name != "status" {
 		t.Fatalf("subs = %+v", subs)
+	}
+}
+
+// Re-discovery replaces an exe's provisional set: subs dropped from
+// --help leave no stale rows, and a CamelCase sub lands as a lowercase
+// id with its real-case argv token.
+func TestDiscoverReplacesStale(t *testing.T) {
+	ctx := context.Background()
+	bin := t.TempDir()
+	exe := filepath.Join(bin, "fakecli")
+	write := func(subs string) {
+		body := "#!/bin/sh\nprintf 'Usage: fakecli <command>\\n\\nAvailable Commands:\\n" + subs + "'\n"
+		if err := os.WriteFile(exe, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("  oldsub     does old\n  CamelSub   does camel\n")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	r := New(gen.New(d), t.TempDir())
+
+	got, err := r.Discover(ctx, "fakecli")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("discover: %v got=%v", err, got)
+	}
+	m, ok := r.Get("fakecli.camelsub")
+	if !ok || m.Command.Arguments[0] != "CamelSub" {
+		t.Fatalf("camel sub: %+v", m)
+	}
+	// Second run drops oldsub, adds newsub.
+	write("  newsub     does new\n")
+	if _, err := r.Discover(ctx, "fakecli"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.Get("fakecli.oldsub"); ok {
+		t.Fatal("stale discovered row survived re-discovery")
+	}
+	if _, ok := r.Get("fakecli.newsub"); !ok {
+		t.Fatal("new sub missing after re-discovery")
 	}
 }
 

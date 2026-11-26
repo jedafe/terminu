@@ -38,6 +38,12 @@ SELECT * FROM command_manifests WHERE id = ? AND source = ?;
 -- grammar, hence delete-all + re-upsert rather than NOT IN.)
 DELETE FROM command_manifests WHERE source = ?;
 
+-- name: DeleteDiscoveredManifests :exec
+-- Re-discovery replaces one exe's provisional set wholesale - subs that
+-- vanished from --help since the last run leave no stale rows. Scoped
+-- per application so other exes' discovered rows survive.
+DELETE FROM command_manifests WHERE source = 'discovered' AND application = ?;
+
 -- name: ListManifests :many
 SELECT * FROM command_manifests ORDER BY application, id;
 
