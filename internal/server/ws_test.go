@@ -96,9 +96,13 @@ func TestSendStateFrames(t *testing.T) {
 	if len(opts) != 2 {
 		t.Fatalf("options: %v", opts)
 	}
-	// The wire contract is {label, hint} — no inject payload (ADR-007).
-	if o0, _ := opts[0].(map[string]any); o0["hint"] != "y" || o0["inject"] != nil {
+	// The wire contract is {label, hint} — the inject key must be absent
+	// entirely, not just null (ADR-007).
+	if o0, _ := opts[0].(map[string]any); o0["hint"] != "y" {
 		t.Fatalf("option hint missing on wire: %v", opts[0])
+	}
+	if _, present := opts[0].(map[string]any)["inject"]; present {
+		t.Fatalf("inject key leaked on wire: %v", opts[0])
 	}
 	st2 := read()
 	if st2["type"] != "state" || st2["state"] != "working" {

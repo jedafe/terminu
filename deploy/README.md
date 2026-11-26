@@ -68,6 +68,7 @@ docker run -d --name terminu \
   -e TU_SESSION_SECRET=<random> \
   -e TU_ADMIN_USER=<operator> \
   -e TU_ADMIN_PASSWORD=<password> \
+  -e TU_DATA_DIR=/data \
   -p 7701:7701 -v terminu-data:/data \
   terminu/terminu
 ```

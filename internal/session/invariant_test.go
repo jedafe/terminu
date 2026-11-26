@@ -28,8 +28,11 @@ func TestInputFrameIsSolePTYWriter(t *testing.T) {
 	masterOK := map[string]bool{"internal/session/session.go": true}
 	callerOK := map[string]bool{"internal/server/ws.go": true}
 
-	masterWrite := regexp.MustCompile(`\b(ptmx|pty|ptyFile|ptyMaster|master)\.Write\(`)
-	sessionWrite := regexp.MustCompile(`[A-Za-z_]*[Ss]ess(?:ion)?\w*\.Write\(`)
+	// Case-insensitive, suffix-tolerant: myPty/masterFile/PTY_MASTER all
+	// count. Over-matching is the safe side for a tripwire — a false
+	// positive is loud and trivially renamed, a miss is silent.
+	masterWrite := regexp.MustCompile(`(?i)\b\w*(ptmx|pty|master)\w*\.Write\(`)
+	sessionWrite := regexp.MustCompile(`(?i)\b\w*sess(?:ion)?\w*\.Write\(`)
 
 	root := filepath.Join("..", "..") // package dir → repo root
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

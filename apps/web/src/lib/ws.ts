@@ -31,7 +31,8 @@ export interface PromptOption {
 export interface PromptFrame {
 	kind: string;
 	title: string;
-	options: PromptOption[];
+	// freetext prompts carry no options — the server emits null.
+	options?: PromptOption[] | null;
 }
 
 const BACKOFF = [500, 1000, 2000, 4000, 8000, 15000];
