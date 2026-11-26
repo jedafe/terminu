@@ -266,7 +266,7 @@
 									shell <span class="marg">{pr.shell}</span>
 								</button>
 							{/if}
-							{#each pr.variants ?? [] as v (v.name)}
+							{#each pr.variants ?? [] as v}
 								<button
 									class="cx sub"
 									onclick={() => void pick(() => onlaunch(pr.id, { variant: v.name }))}
@@ -379,7 +379,12 @@
 		role="button"
 		tabindex="0"
 		onclick={() => onopen(s)}
-		onkeydown={() => onopen(s)}
+		onkeydown={(e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				onopen(s);
+			}
+		}}
 	>
 		<span class="dot" class:live={isLive(s)} class:dead={isFinished(s)} class:needs={needsYou(s)}
 		></span>

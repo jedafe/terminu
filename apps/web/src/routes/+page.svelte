@@ -82,6 +82,15 @@
 	// The armed frame — tab clicks route their session here.
 	let focusCell = $state<string | null>(null);
 	let armedCell = $derived(focusCell ?? ($activePane ? cellPos($grid, $activePane) : null));
+	// A focusCell pointing outside a shrunk grid (preset applied after
+	// the click) poisons armedCell — clear it so armed falls back to
+	// the active pane's live slot.
+	$effect(() => {
+		if (focusCell) {
+			const [r, c] = focusCell.split(':').map(Number);
+			if (!$grid[r]?.cells[c]) focusCell = null;
+		}
+	});
 	// The palette's context scope — the session in the armed pane feeds
 	// context-first ranking + {session.cwd} resolution (§04).
 	let activeSessionId = $derived($panes.find((p) => p.id === $activePane)?.sessionId ?? '');
@@ -649,7 +658,12 @@
 						activePane.set(p.id);
 						scheduleSave();
 					}}
-					onkeydown={() => activePane.set(p.id)}
+					onkeydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							activePane.set(p.id);
+						}
+					}}
 				>
 					{#if needsYouId(p.sessionId)}<span class="tabdot needs"></span>{/if}
 					{tabLabel(p)}{#if pinUnv(p.sessionId)}<span class="tabpin" title="adapter pin unverified">!</span>{/if}

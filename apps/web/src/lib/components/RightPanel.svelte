@@ -145,7 +145,13 @@
 			{#if preview}<pre class="prev">{preview}</pre>{/if}
 		</div>
 	{:else}
-		<div class="empty">no session selected</div>
+		<div class="pwrap">
+			<div class="rhead">
+				<span class="rname">no session selected</span>
+				<button class="rx" aria-label="close panel" onclick={onclose}>✕</button>
+			</div>
+			<div class="empty">tap a session in the left panel</div>
+		</div>
 	{/if}
 {:else}
 	<CommandPalette sessionId={sessionId} onclose={onclose} />
