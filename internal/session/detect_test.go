@@ -76,6 +76,7 @@ func TestRegistryPipeline(t *testing.T) {
 	defer func() { _ = d.Close() }()
 	bus := NewEventBus()
 	m := NewManager(&config.Config{
+		DataDir:          t.TempDir(), // scrollback files must not leak into the package tree
 		LocalTargetMode:  "container",
 		SessionBufferKB:  64,
 		QuiescenceMS:     80,

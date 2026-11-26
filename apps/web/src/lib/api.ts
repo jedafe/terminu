@@ -44,7 +44,6 @@ export const api = {
 	putWorkspace: (id: number, w: { name: string; layout: string; last_open_session?: string }) =>
 		req(`/api/workspaces/${id}`, { method: 'PUT', body: JSON.stringify(w) }),
 	agents: () => req<AgentView[]>('/api/agents'),
-	agentPrompt: (id: string) => req<AgentPrompt>(`/api/agents/${id}/prompt`),
 	alerts: () => req<Alert[]>('/api/alerts'),
 	ackAlert: (id: number) => req(`/api/alerts/${id}/ack`, { method: 'POST' }),
 	// §04 command intelligence — palette search (context-first when
@@ -56,8 +55,6 @@ export const api = {
 		return req<CommandSummary[]>(`/api/commands?${p}`);
 	},
 	command: (id: string) => req<CommandManifest>(`/api/commands/${encodeURIComponent(id)}`),
-	commandContext: (sessionId: string) =>
-		req<CommandContext>(`/api/commands/context/${encodeURIComponent(sessionId)}`),
 	discovered: (exe?: string) =>
 		req<CommandSummary[]>(exe ? `/api/discovered?exe=${encodeURIComponent(exe)}` : '/api/discovered'),
 	adapters: () => req<AdapterPin[]>('/api/adapters'),
@@ -134,14 +131,6 @@ export interface AgentPromptBody {
 	// Read-only options — hint is advisory display text (ADR-007).
 	options: { label: string; hint?: string; default?: boolean }[];
 }
-export interface AgentPrompt {
-	state: string;
-	kind?: string;
-	confidence?: string;
-	evidence?: string;
-	region?: { y0: number; y1: number };
-	prompt: AgentPromptBody | null;
-}
 
 // §05 ack-able alert row — unacknowledged sort first server-side.
 export interface Alert {
@@ -196,17 +185,6 @@ export interface CommandParam {
 	options?: string[];
 	default?: unknown;
 	description?: string;
-}
-
-// GET /api/commands/context/{session_id} — the live context read the
-// context-first ranking uses (§04 Context actions).
-export interface CommandContext {
-	session_id: string;
-	processes: string[];
-	tool: string;
-	pin_status: string;
-	cwd: string;
-	commands: CommandSummary[];
 }
 
 // ---------- §05 launch profiles ----------

@@ -1,6 +1,8 @@
 // Ref: .teos/sections/09-authn-authz-broker.md, .teos/adr/ADR-004-broker-only-execution-path.md
 // The ONLY path for privileged work. Every op: identity → policy → audit.
-// Phase 1: role-based policy + audit; confirmation tokens land with Phase 2.
+// The §09 confirmation stage is spec'd but unexercised: no current op
+// requires a token (ADR-007 removed the execute path that consumed it);
+// the HMAC machinery returns when a gated op needs it.
 package broker
 
 import (
