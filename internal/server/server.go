@@ -281,11 +281,10 @@ func (s *Server) spawnSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The catalog contract here is {target, cwd, shell} — Argv/Env on
-	// SpawnRequest are Go-level surfaces for manifest execution and
-	// profile launch, which reach Spawn through their own brokered
-	// routes (audited with the real argv). Honoring them on this route
-	// would spawn arbitrary commands whose audit row logs only
-	// shell+cwd — drop them.
+	// SpawnRequest are Go-level surfaces for profile launch, which
+	// reaches Spawn through its own brokered route (audited with the
+	// real argv). Honoring them on this route would spawn arbitrary
+	// commands whose audit row logs only shell+cwd — drop them.
 	req.Argv, req.Env = nil, nil
 	if req.Cols < 0 || req.Cols > maxSpawnCols || req.Rows < 0 || req.Rows > maxSpawnRows ||
 		len(req.Name) > maxSpawnName || len(req.Cwd) > maxSpawnField ||

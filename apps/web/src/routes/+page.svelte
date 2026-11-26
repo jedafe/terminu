@@ -417,6 +417,12 @@
 			const ago = fmtAgo(s.ended_at);
 			return s.state + (ago ? ` ${ago}` : '');
 		}
+		// A low-confidence wait is only ever a hint — "may be waiting",
+		// never the confident "waiting <t>" phrasing (session-state
+		// catalog: unknown carries no options).
+		if (a?.state === 'waiting-for-input' && a.confidence === 'low') {
+			return 'may be waiting';
+		}
 		return a?.process ?? s.state;
 	}
 	// The detached overlay flag: a live session nobody has watched for

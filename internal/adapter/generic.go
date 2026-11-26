@@ -176,8 +176,8 @@ func detectG3(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 }
 
 // G4: quiescence + cursor at the bottom input line only → the honest
-// minimum: waiting{unknown}, low confidence, no buttons — the overlay
-// shows "may be waiting" and nothing injectable.
+// minimum: waiting{unknown}, low confidence, no prompt — the UI shows
+// "may be waiting" and no card.
 func detectG4(s *screen.Screen, ctx *SessionCtx) *StateMatch {
 	if !quiesced(ctx) {
 		return nil
