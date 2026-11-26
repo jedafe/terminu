@@ -17,15 +17,19 @@ import (
 //
 // Two rules are enforced:
 //  1. The PTY master may only be written inside internal/session
-//     (the session owns its ptmx).
-//  2. External callers of the session Write path may only live in the
-//     ws input handler (internal/server/ws.go).
+//     (the session owns its ptmx). Any *os.File named like a PTY master
+//     counts — a renamed field must not slip the check.
+//  2. Calls on session-typed receivers (anything named *sess*/*session*)
+//     may only live in the ws input handler (internal/server/ws.go).
+//
+// It is convention-based — a receiver named to dodge the pattern would
+// still be caught by rule 1 if it ever reaches a PTY handle.
 func TestInputFrameIsSolePTYWriter(t *testing.T) {
 	masterOK := map[string]bool{"internal/session/session.go": true}
 	callerOK := map[string]bool{"internal/server/ws.go": true}
 
-	masterWrite := regexp.MustCompile(`ptmx\.Write`)
-	sessionWrite := regexp.MustCompile(`\b(sess|session)\.Write\(`)
+	masterWrite := regexp.MustCompile(`\b(ptmx|pty|ptyFile|ptyMaster|master)\.Write\(`)
+	sessionWrite := regexp.MustCompile(`[A-Za-z_]*[Ss]ess(?:ion)?\w*\.Write\(`)
 
 	root := filepath.Join("..", "..") // package dir → repo root
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

@@ -108,9 +108,17 @@
 	}
 
 	// The cheat-sheet shows the template verbatim — {param} refs stay
-	// as placeholders for the human to fill in at the terminal.
+	// as placeholders for the human to fill in at the terminal. Flagged
+	// params render after the argument templates (the execution
+	// ordering: `git commit -m {message}`, never `git -m x commit`).
 	function argvTemplate(m: CommandManifest): string[] {
-		return [m.command.executable, ...m.command.arguments];
+		const out = [m.command.executable, ...m.command.arguments];
+		for (const p of m.parameters ?? []) {
+			if (!p.flag) continue;
+			out.push(p.flag);
+			if (p.type !== 'boolean') out.push(`{${p.name}}`);
+		}
+		return out;
 	}
 	function argvText(m: CommandManifest): string {
 		return argvTemplate(m).join(' ');
@@ -235,7 +243,11 @@
 					</div>
 				{/if}
 				{#if manifest.execution.working_dir}
-					<div class="pnote">runs in {manifest.execution.working_dir}</div>
+					<div class="pnote">
+						runs in {manifest.execution.working_dir === '{session.cwd}'
+							? "the session's working directory"
+							: manifest.execution.working_dir}
+					</div>
 				{/if}
 				{#if err}<div class="perr">{err}</div>{/if}
 				<div class="pcta">

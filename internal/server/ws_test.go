@@ -97,7 +97,7 @@ func TestSendStateFrames(t *testing.T) {
 		t.Fatalf("options: %v", opts)
 	}
 	// The wire contract is {label, hint} — no inject payload (ADR-007).
-	if o0, _ := opts[0].(map[string]any); o0["hint"] != "y" {
+	if o0, _ := opts[0].(map[string]any); o0["hint"] != "y" || o0["inject"] != nil {
 		t.Fatalf("option hint missing on wire: %v", opts[0])
 	}
 	st2 := read()
