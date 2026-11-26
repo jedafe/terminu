@@ -85,9 +85,10 @@
 		newopen = !newopen;
 	}
 	// +new can be opened from outside (topbar + / empty-grid button via
-	// bind:newopen) — fetch profiles on any transition to open.
+	// bind:newopen) — fetch profiles on any transition to open. The
+	// profiles view needs them too — direct entry skips +new entirely.
 	$effect(() => {
-		if (newopen) void refreshProfiles();
+		if (newopen || $leftView === 'profiles') void refreshProfiles();
 	});
 	async function pick(fn: () => Promise<void> | void) {
 		err = '';
