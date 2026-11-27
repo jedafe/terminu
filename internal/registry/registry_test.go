@@ -380,3 +380,55 @@ func TestDiscoverSlashDiffs(t *testing.T) {
 		t.Fatal("cache lost on empty evidence")
 	}
 }
+
+// go's "The commands are:" and kubectl's "Basic Commands:" style
+// headers open the section too — colon-terminated headers only.
+func TestParseHelpHeaderVariants(t *testing.T) {
+	help := `Usage: gocli <command>
+
+The commands are:
+
+	bug      start a bug report
+	build    compile packages
+
+See gocli help commands for more.
+`
+	subs, _ := parseHelp(help)
+	if len(subs) != 2 || subs[0].name != "bug" {
+		t.Fatalf("go-style header: %+v", subs)
+	}
+	help2 := `Basic Commands:
+  get    fetch
+  set    apply
+`
+	subs, _ = parseHelp(help2)
+	if len(subs) != 2 {
+		t.Fatalf("kubectl-style header: %+v", subs)
+	}
+}
+
+// An exe outside PATH but inside an extraBinDir still discovers — the
+// inventory's dir map is the exec fallback (this was the
+// "could not read --help" root cause for ~/.local/bin-style installs).
+func TestDiscoverResolvesOffPathExe(t *testing.T) {
+	ctx := context.Background()
+	bin := t.TempDir()
+	exe := filepath.Join(bin, "offpath")
+	body := "#!/bin/sh\nprintf 'Commands:\\n  go   do\\n'\n"
+	if err := os.WriteFile(exe, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Intentionally NOT on PATH — the exePath map is the only route.
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	r := New(gen.New(d), t.TempDir())
+	r.exePath = map[string]string{"offpath": bin}
+
+	got, err := r.Discover(ctx, "offpath")
+	if err != nil || len(got) != 1 || got[0].ID != "offpath.go" {
+		t.Fatalf("off-path discover: %v got=%v", err, got)
+	}
+}

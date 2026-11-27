@@ -30,10 +30,11 @@ type Registry struct {
 	mu   sync.RWMutex
 	byID map[string]*Manifest // resolved winners only
 
-	appsMu sync.RWMutex
-	apps   []AppEntry // PATH+registry inventory (apps.go)
-	appsAt time.Time
-	tried  map[string]time.Time // exes auto-discovery attempted → when
+	appsMu  sync.RWMutex
+	apps    []AppEntry // PATH+registry inventory (apps.go)
+	appsAt  time.Time
+	tried   map[string]time.Time // exes auto-discovery attempted → when
+	exePath map[string]string    // exe name → its scan dir (exec fallback)
 }
 
 func New(q *gen.Queries, dataDir string) *Registry {

@@ -138,12 +138,18 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// Slash detection (§04): an agent-bound session's slash surface is
+	// Slash detection (§04): an agent session's slash surface is
 	// observed — the rendered screen (an open /menu or /help listing)
 	// plus the agent's command dirs under home and the session cwd.
-	// Persisted as discovered manifests, rewritten only on a real set
-	// change; observe-only, nothing is typed into the PTY (ADR-007).
-	if tool != "" {
+	// The app key is the bound tool, falling back to the live fg proc —
+	// an agent the adapter didn't bind still gets detected. Persisted
+	// as discovered manifests, rewritten only on a real set change;
+	// observe-only, nothing is typed into the PTY (ADR-007).
+	detectApp := tool
+	if detectApp == "" && len(procs) > 0 {
+		detectApp = procs[0]
+	}
+	if detectApp != "" {
 		cmds := map[string]string{}
 		if lines, lerr := s.mgr.ScreenText(id); lerr == nil {
 			for name, desc := range registry.ParseSlashCandidates(lines) {
@@ -151,14 +157,14 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		home, _ := os.UserHomeDir()
-		for _, d := range registry.SlashCommandDirs(tool, home, cwd) {
+		for _, d := range registry.SlashCommandDirs(detectApp, home, cwd) {
 			for name, desc := range registry.ScanSlashDir(d) {
 				if _, ok := cmds[name]; !ok {
 					cmds[name] = desc
 				}
 			}
 		}
-		if changed, derr := s.reg.DiscoverSlash(r.Context(), tool, cmds); derr == nil && changed {
+		if changed, derr := s.reg.DiscoverSlash(r.Context(), detectApp, cmds); derr == nil && changed {
 			ms = s.reg.Context(procs, cwd)
 		}
 	}

@@ -44,7 +44,11 @@ func (r *Registry) Discover(ctx context.Context, exe string) ([]*Manifest, error
 	if exe == "" || strings.ContainsAny(exe, "/\\ \t") {
 		return nil, ErrInvalidManifest // bare binary names only
 	}
-	subs, flags, err := scrapeHelp(ctx, exe)
+	path := r.ResolveExe(exe)
+	if path == "" {
+		return nil, errors.New("no such binary: " + exe)
+	}
+	subs, flags, err := scrapeHelp(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +145,10 @@ func (r *Registry) ListDiscovered() []*Manifest {
 type subcmd struct{ name, disp, desc string }
 
 // sectionRe matches a subcommand listing header — "Commands:",
-// "Available Commands:", "Subcommands:", etc.
-var sectionRe = regexp.MustCompile(`(?i)^\s*(available\s+)?(sub)?commands\s*:`)
+// "Available Commands:", "Basic Commands:" (kubectl), "Subcommands:",
+// "The commands are:" (go)… Colon-terminated only, so prose like
+// "see go help commands" can't open a section.
+var sectionRe = regexp.MustCompile(`(?i)^\s*[\w ]*commands\b(\s+(are|available|list))?\s*:\s*$`)
 
 // subRe matches "  name   description" inside a commands section —
 // a leading indent, the subcommand token, then 2+ spaces of gap.
@@ -305,13 +311,14 @@ const slashMinCluster = 3
 var slashNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9:_-]{0,40}$`)
 
 // slashRowRe reads "  /add    add files to the chat" — optional
-// prompt/list glyph, `/name`, column gap, description.
-var slashRowRe = regexp.MustCompile(`^\s{0,8}[>›·*]?\s*/([a-zA-Z][a-zA-Z0-9:_-]*)\s{2,}(.+)$`)
+// prompt/border glyph (TUI menus draw │-borders and ❯-selectors),
+// `/name`, column gap, description.
+var slashRowRe = regexp.MustCompile(`^\s{0,8}[>›·*❯│┃|┆┊]?\s*/([a-zA-Z][a-zA-Z0-9:_-]*)\s{2,}(.+)$`)
 
 // slashBareRe reads a bare "/name" row — menu items with no trailing
 // description. `/$` anchoring keeps "/etc/passwd" out (the trailing
 // `/passwd` fails the match).
-var slashBareRe = regexp.MustCompile(`^\s{0,8}[>›·*]?\s*/([a-zA-Z][a-zA-Z0-9:_-]*)\s*$`)
+var slashBareRe = regexp.MustCompile(`^\s{0,8}[>›·*❯│┃|┆┊]?\s*/([a-zA-Z][a-zA-Z0-9:_-]*)\s*$`)
 
 // ParseSlashCandidates extracts slash commands from rendered screen
 // lines — an open `/` menu, a `/help` listing, or similar rows. Returns

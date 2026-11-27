@@ -7,6 +7,7 @@ package registry
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,13 +19,18 @@ import (
 const appsScanInterval = 10 * time.Minute
 
 // extraBinDirs are the usual per-user install spots outside $PATH —
-// ~/ expands against the service user's home. Per-user toolchains
-// (cargo, go, bun, nix profiles) install here.
+// ~/ expands against the service user's home, a `*` glob segment
+// expands versioned toolchains (nvm/volta keep binaries under
+// versioned dirs PATH may not carry). Per-user toolchains (cargo,
+// go, bun, nix profiles) install here.
 var extraBinDirs = []string{
 	"~/.local/bin", "~/bin", "~/go/bin", "~/.cargo/bin",
 	"~/.bun/bin", "~/.deno/bin", "~/.npm-global/bin",
 	"~/.nix-profile/bin", "/nix/var/nix/profiles/default/bin",
 	"/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin",
+	"~/.nvm/versions/node/*/bin", "~/.volta/bin", "~/.asdf/shims",
+	"~/.local/share/mise/shims", "~/.local/share/pnpm",
+	"~/snap/bin", "/snap/bin",
 }
 
 // AppEntry is one row of the apps inventory. Path is the first $PATH
@@ -79,10 +85,20 @@ func (r *Registry) RefreshApps() {
 			}
 			e = filepath.Join(home, e[2:])
 		}
-		e = filepath.Clean(e)
-		if !seenDir[e] {
-			seenDir[e] = true
-			dirs = append(dirs, e)
+		var expanded []string
+		if strings.Contains(e, "*") {
+			if g, gerr := filepath.Glob(e); gerr == nil {
+				expanded = g
+			}
+		} else {
+			expanded = []string{e}
+		}
+		for _, d := range expanded {
+			d = filepath.Clean(d)
+			if !seenDir[d] {
+				seenDir[d] = true
+				dirs = append(dirs, d)
+			}
 		}
 	}
 	onPath := map[string]string{} // name → its dir (first wins: PATH order)
@@ -144,8 +160,24 @@ func (r *Registry) RefreshApps() {
 		return out[i].Name < out[j].Name
 	})
 	r.appsMu.Lock()
-	r.apps, r.appsAt = out, time.Now()
+	r.apps, r.appsAt, r.exePath = out, time.Now(), onPath
 	r.appsMu.Unlock()
+}
+
+// ResolveExe maps a bare exe name to an absolute path — LookPath
+// first (respects PATH order), then the inventory's dir map so
+// binaries living in extraBinDirs (outside the daemon's PATH) still
+// scrape. Returns "" when unresolvable.
+func (r *Registry) ResolveExe(exe string) string {
+	if p, err := exec.LookPath(exe); err == nil {
+		return p
+	}
+	r.appsMu.RLock()
+	defer r.appsMu.RUnlock()
+	if dir, ok := r.exePath[exe]; ok {
+		return filepath.Join(dir, exe)
+	}
+	return ""
 }
 
 // Apps returns the cached inventory + when it was built.
