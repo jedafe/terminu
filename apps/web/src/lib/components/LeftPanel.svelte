@@ -358,23 +358,7 @@
 		flex-direction: column;
 		overflow-y: auto;
 		overflow-y: overlay;
-		scrollbar-width: auto;
-		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 		overscroll-behavior: contain;
-	}
-	.pwrap::-webkit-scrollbar {
-		width: 12px;
-		background: transparent;
-	}
-	.pwrap::-webkit-scrollbar-thumb {
-		background: rgba(255, 255, 255, 0.3);
-		border-radius: 4px;
-	}
-	.pwrap::-webkit-scrollbar-thumb:hover {
-		background: rgba(255, 255, 255, 0.45);
-	}
-	.pwrap::-webkit-scrollbar-track {
-		background: transparent;
 	}
 	.dhead {
 		display: flex;

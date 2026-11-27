@@ -17,6 +17,11 @@ body > div {
 }
 * {
 	box-sizing: border-box;
+	scrollbar-width: none; /* no scrollbar gutter/track sitewide — scrolling stays */
+	scrollbar-color: transparent transparent;
+}
+*::-webkit-scrollbar {
+	display: none;
 }
 button {
 	cursor: pointer;

@@ -658,6 +658,7 @@
 		<button class="tb" aria-label="sessions panel" onclick={() => togglePanel('left')}>
 			☰
 		</button>
+		<button class="tb add" aria-label="new session" onclick={toggleNewMenu}>+</button>
 		<div class="panes">
 			{#each $panes as p (p.id)}
 				<div
@@ -703,8 +704,7 @@
 				</div>
 			{/each}
 		</div>
-		<!-- the strip scrolls; spawn/commands/panel toggles stay pinned -->
-		<button class="tb add" aria-label="new session" onclick={toggleNewMenu}>+</button>
+		<!-- the strip scrolls; commands/panel toggles stay pinned -->
 		<button class="tb" aria-label="applications" title="applications (⌘K)" onclick={toggleApps}>⌘</button>
 		<button class="tb" aria-label="info panel" onclick={() => togglePanel('right')}>◧</button>
 	</header>
@@ -967,22 +967,6 @@
 		gap: 4px;
 		overflow-x: auto;
 		overflow-x: overlay; /* float over tabs where supported — no gutter band */
-		scrollbar-width: auto;
-		scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-	}
-	.panes::-webkit-scrollbar {
-		height: 12px;
-		background: transparent;
-	}
-	.panes::-webkit-scrollbar-thumb {
-		background: rgba(255, 255, 255, 0.3);
-		border-radius: 4px;
-	}
-	.panes::-webkit-scrollbar-thumb:hover {
-		background: rgba(255, 255, 255, 0.45);
-	}
-	.panes::-webkit-scrollbar-track {
-		background: transparent;
 	}
 	/* Flat underline tabs (japa.to/blog style) — no chip; the active
 	   tab's 2px accent bar rides on the topbar's baseline border. */
