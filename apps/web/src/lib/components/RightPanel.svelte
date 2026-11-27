@@ -29,6 +29,30 @@
 			.catch(() => {});
 	});
 
+	// Agent-armed sessions surface their slash commands immediately —
+	// the context fetch on arm (and again when the agent binds) runs
+	// the server-side detection, and a slash-bearing result flips the
+	// panel to the commands view once per session. A manual flip back
+	// isn't overridden; non-agent sessions keep the session view.
+	let lastCtxKey = '',
+		flippedFor = '';
+	$effect(() => {
+		if (!sessionId) return;
+		const key = `${sessionId}:${agent?.tool ?? agent?.process ?? ''}`;
+		if (lastCtxKey === key) return;
+		lastCtxKey = key;
+		void api
+			.commandContext(sessionId)
+			.then((ctx) => {
+				const slash = (ctx?.commands ?? []).some((c) => c.tags?.includes('slash'));
+				if (slash && flippedFor !== sessionId) {
+					flippedFor = sessionId;
+					rightView.set('commands');
+				}
+			})
+			.catch(() => {});
+	});
+
 	// Rename — PATCH {name}; blank restores the auto label.
 	let rn = $state(''),
 		rnDirty = $state(false),
