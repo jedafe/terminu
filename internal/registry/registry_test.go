@@ -377,6 +377,26 @@ func TestScanSlashDirSkills(t *testing.T) {
 	}
 }
 
+// `devin skills list` rows: `/`-prefixed names are user-invocable and
+// extract with descriptions; bare model-only skills don't count.
+func TestParseSlashListOutput(t *testing.T) {
+	out := ParseSlashListOutput(`Available skills
+  devin-cli [model] (~/.local/share/devin) - Look up docs
+  /declarative-repo-setup [model,user] (built-in) - Generate and verify a working environment.yaml
+  /upload-secrets [model,user] (built-in) - Securely upload local secrets
+  /bare
+`)
+	if len(out) != 3 {
+		t.Fatalf("list parse: %+v", out)
+	}
+	if _, ok := out["devin-cli"]; ok {
+		t.Fatal("model-only skill (no /) must not parse")
+	}
+	if !strings.HasPrefix(out["declarative-repo-setup"], "Generate") || out["upload-secrets"] == "" {
+		t.Fatalf("descs: %+v", out)
+	}
+}
+
 // Slash detection diffs: same set → no write; changed set → rewrite
 // that leaves the app's --help-derived rows alone.
 func TestDiscoverSlashDiffs(t *testing.T) {

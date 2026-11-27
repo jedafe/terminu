@@ -164,6 +164,24 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		// Probe: agents that self-report their slash surface (devin
+		// `skills list`) — the only source that covers built-ins when
+		// no skill dirs exist and no menu has rendered. Broker-gated +
+		// audited like the --help discover path.
+		if pargv := registry.SlashProbeArgv(detectApp); pargv != nil {
+			op := broker.Op{
+				Actor: principal(r), Action: "command.slash_probe", Target: "local",
+				Argv: append([]string{detectApp}, pargv...), Risk: broker.RiskControlled,
+			}
+			if s.br.Check(op) == nil {
+				for name, desc := range s.reg.ProbeSlash(r.Context(), detectApp, cwd) {
+					if _, ok := cmds[name]; !ok {
+						cmds[name] = desc
+					}
+				}
+				_ = s.br.Audit(r.Context(), op, "ok")
+			}
+		}
 		if changed, derr := s.reg.DiscoverSlash(r.Context(), detectApp, cmds); derr == nil && changed {
 			ms = s.reg.Context(procs, cwd)
 		}

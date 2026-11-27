@@ -1,13 +1,12 @@
 <!-- Ref: .teos/plans/2026-11-26-side-panels-design.md — right rail:
-     armed-session detail + prompt card + scrollback preview + rename
-     (session view), hosting the session-aware commands view. All
-     display-only per ADR-007. -->
+     armed-session detail + prompt card + rename (session view),
+     hosting the session-aware commands view. All display-only per
+     ADR-007. -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { agentStates, prompts, refreshSessions, rightView } from '$lib/stores';
 	import { isLive, needsYou, toolBadge, pinUnv, label, fmtAgo, sessionOf } from '$lib/sessionfmt';
 	import { api, ApiError } from '$lib/api';
-	import { stripAnsi } from '$lib/ansi';
 	import CommandPalette from './CommandPalette.svelte';
 
 	let { sessionId, onclose }: { sessionId: string; onclose: () => void } = $props();
@@ -28,29 +27,6 @@
 				prompts.update((m) => ({ ...m, [sessionId]: r.prompt ?? null }));
 			})
 			.catch(() => {});
-	});
-
-	// Scrollback preview — tail read on open/session change + refresh.
-	let preview = $state(''),
-		previewErr = $state(''),
-		lastPrevFetch = '';
-	async function loadPreview(id: string) {
-		previewErr = '';
-		try {
-			const text = await api.scrollback(id);
-			const lines = stripAnsi(text).split('\n');
-			preview = lines.slice(-40).join('\n').trimEnd();
-		} catch {
-			previewErr = 'no scrollback';
-			preview = '';
-		}
-	}
-	$effect(() => {
-		if (sessionId && lastPrevFetch !== sessionId) {
-			lastPrevFetch = sessionId;
-			preview = '';
-			void loadPreview(sessionId);
-		}
 	});
 
 	// Rename — PATCH {name}; blank restores the auto label.
@@ -136,13 +112,6 @@
 					{/if}
 				</div>
 			{/if}
-
-			<div class="ghead">
-				<span>preview</span>
-				<button class="clearall" onclick={() => void loadPreview(sessionId)}>↻</button>
-			</div>
-			{#if previewErr}<div class="empty">{previewErr}</div>{/if}
-			{#if preview}<pre class="prev">{preview}</pre>{/if}
 		</div>
 	{:else}
 		<div class="pwrap">
@@ -289,16 +258,6 @@
 		font: 10px ui-monospace, monospace;
 		letter-spacing: 0.18em;
 	}
-	.clearall {
-		border: 0;
-		background: transparent;
-		color: #6b7f9e;
-		font: 12px ui-monospace, monospace;
-		padding: 8px 10px;
-	}
-	.clearall:active {
-		color: #e6f2ff;
-	}
 	/* prompt card — same look as the in-pane overlay card (ADR-007:
 	   read-only; answering happens in the terminal). */
 	.pcard {
@@ -343,16 +302,6 @@
 		border-radius: 4px;
 		padding: 2px 5px;
 		background: #0d1420;
-	}
-	.prev {
-		font: 11px/1.45 ui-monospace, monospace;
-		padding: 8px 14px;
-		margin: 0;
-		overflow: auto;
-		white-space: pre-wrap;
-		word-break: break-all;
-		color: #9db2ce;
-		max-height: 40dvh;
 	}
 	.empty {
 		padding: 24px;

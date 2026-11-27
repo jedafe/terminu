@@ -412,7 +412,9 @@ func SlashCommandDirs(app, home, cwd string) []string {
 	case "devin":
 		add(filepath.Join(home, ".agents", "skills"))
 		add(filepath.Join(home, ".config", "devin", "skills"))
+		add(filepath.Join(home, ".config", "cognition", "skills"))
 		add(filepath.Join(cwd, ".devin", "skills"))
+		add(filepath.Join(cwd, ".cognition", "skills"))
 		add(filepath.Join(cwd, ".agents", "skills"))
 	}
 	add(filepath.Join(home, "."+app, "commands"))
@@ -495,6 +497,83 @@ func skillMeta(path string) (name, desc string) {
 		}
 	}
 	return name, desc
+}
+
+// slashProbes are argv that make an agent binary report its own slash
+// surface — the agent's own enumeration beats filesystem conventions,
+// and covers built-in commands that have no file on disk. Only agents
+// with a documented non-interactive list command get an entry.
+var slashProbes = map[string][]string{
+	"devin": {"skills", "list"},
+}
+
+// SlashProbeArgv returns the argv the agent's binary understands as
+// "list your slash commands", or nil for agents with no such probe.
+func SlashProbeArgv(app string) []string {
+	return slashProbes[app]
+}
+
+// slashListRowRe reads `  /name [tags] (location) - description` —
+// the `devin skills list` row shape. The leading `/` marks a
+// user-invocable command (model-only skills are listed bare).
+var slashListRowRe = regexp.MustCompile(`^\s{0,4}/([a-zA-Z][a-zA-Z0-9:_-]*)\s*(?:\[[^\]]*\])?\s*(?:\([^)]*\))?\s*-\s*(.*)$`)
+
+// slashListBareRe reads a bare `/name` row in a list output.
+var slashListBareRe = regexp.MustCompile(`^\s{0,4}/([a-zA-Z][a-zA-Z0-9:_-]*)\s*$`)
+
+// ParseSlashListOutput extracts slash commands from an agent's own
+// list output (`devin skills list`). Only `/`-prefixed rows count —
+// bare names are model-triggered skills, not user commands.
+func ParseSlashListOutput(text string) map[string]string {
+	out := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if m := slashListRowRe.FindStringSubmatch(line); m != nil {
+			if _, seen := out[m[1]]; !seen {
+				out[m[1]] = strings.TrimSpace(m[2])
+			}
+			continue
+		}
+		if m := slashListBareRe.FindStringSubmatch(line); m != nil {
+			if _, seen := out[m[1]]; !seen {
+				out[m[1]] = ""
+			}
+		}
+	}
+	return out
+}
+
+// ProbeSlash runs the agent's own list argv and parses its output —
+// broker-gated by the caller, TU_* env-scrubbed like scrapeHelp, run
+// under the session cwd so project-level skills resolve. Returns nil
+// when the app has no probe or the run yielded nothing.
+func (r *Registry) ProbeSlash(ctx context.Context, app, cwd string) map[string]string {
+	argv := slashProbes[app]
+	if argv == nil {
+		return nil
+	}
+	exe := r.ResolveExe(app)
+	if exe == "" {
+		return nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, discoveryTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, exe, argv...)
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "TU_") {
+			env = append(env, e)
+		}
+	}
+	cmd.Env = env
+	if cwd != "" {
+		cmd.Dir = cwd
+	}
+	out, _ := cmd.CombinedOutput()
+	cmds := ParseSlashListOutput(string(out))
+	if len(cmds) == 0 {
+		return nil
+	}
+	return cmds
 }
 
 // DiscoverSlash persists a detected slash-command set for an agent as
