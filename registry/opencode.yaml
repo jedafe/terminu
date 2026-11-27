@@ -76,3 +76,165 @@ context:
   files: [opencode.json, opencode.jsonc]
 tags: [ai, opencode, version]
 source: builtin
+---
+id: opencode.slash.clear
+application: opencode
+name: "/clear"
+description: "Clear the conversation"
+command:
+  executable: "/clear"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.compact
+application: opencode
+name: "/compact"
+description: "Compact conversation context"
+command:
+  executable: "/compact"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.help
+application: opencode
+name: "/help"
+description: "Show available commands"
+command:
+  executable: "/help"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.init
+application: opencode
+name: "/init"
+description: "Write an AGENTS.md for this project"
+command:
+  executable: "/init"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.models
+application: opencode
+name: "/models"
+description: "Switch model"
+command:
+  executable: "/models"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.redo
+application: opencode
+name: "/redo"
+description: "Redo the last undone change"
+command:
+  executable: "/redo"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.share
+application: opencode
+name: "/share"
+description: "Share the session"
+command:
+  executable: "/share"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.themes
+application: opencode
+name: "/themes"
+description: "Switch theme"
+command:
+  executable: "/themes"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin
+---
+id: opencode.slash.undo
+application: opencode
+name: "/undo"
+description: "Undo the last change"
+command:
+  executable: "/undo"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [opencode]
+  files: []
+tags: [ai, opencode, slash]
+source: builtin

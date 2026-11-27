@@ -32,7 +32,9 @@
 		resetPanelWidth,
 		toggleCommands,
 		prompts,
-		wideLayout
+		wideLayout,
+		leftView,
+		rightView
 	} from '$lib/stores';
 	import { isLive, isFinished, needsYouId, pinUnv, tabLabel } from '$lib/sessionfmt';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
@@ -40,6 +42,7 @@
 	import InputLine from '$lib/components/InputLine.svelte';
 	import LeftPanel from '$lib/components/LeftPanel.svelte';
 	import RightPanel from '$lib/components/RightPanel.svelte';
+	import NewMenu from '$lib/components/NewMenu.svelte';
 
 	let surfaces: Record<string, TerminalSurface | undefined> = {};
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -352,6 +355,8 @@
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 				e.preventDefault();
 				toggleCommands();
+			} else if (e.key === 'Escape' && newOpen) {
+				newOpen = false;
 			}
 		};
 		window.addEventListener('keydown', pal);
@@ -416,17 +421,20 @@
 
 	// ≥900px the panels dock as resizable columns; below that they're
 	// overlay drawers — `wide` tracks the breakpoint for row-click and
-	// openNew behavior (CSS handles the actual positioning).
+	// overlay behavior (CSS handles the actual positioning).
 	let wide = $state(wideLayout());
-	// Bound into LeftPanel — the +new block expands when the topbar
-	// "+" or empty-grid "open a session" lands here.
-	let lpNew = $state(false);
-	function openNew() {
-		panels.update((p) => ({
-			left: { ...p.left, open: true },
-			right: wide ? p.right : { ...p.right, open: false }
-		}));
-		lpNew = true;
+	// The topbar "+" spawn menu — shells + profiles launch from a
+	// dropdown, not the left panel; management alone lives there.
+	let newOpen = $state(false);
+	function toggleNewMenu() {
+		newOpen = !newOpen;
+	}
+	// "manage profiles…" in the menu opens the left panel on its
+	// profiles view — togglePanel carries the touched flag + the
+	// one-drawer-at-a-time rule for us.
+	function manageProfiles() {
+		leftView.set('profiles');
+		if (!$panels.left.open) togglePanel('left');
 	}
 	// Overlay-mode helpers: a session row tap dismisses the drawer it
 	// came from; the backdrop dismisses whichever panel is up.
@@ -505,6 +513,8 @@
 	// Shared spawn landing — profile launches arrive as a fresh session
 	// that gets its own tab + frame.
 	async function spawned(s: Session) {
+		newOpen = false;
+		closeLeftOverlay();
 		// The session exists server-side even if the refetch fails — the
 		// next ws event resyncs; never drop the tab on a read error.
 		await refreshSessions().catch(() => {});
@@ -512,8 +522,8 @@
 		scheduleSave();
 	}
 
-	// Spawn/launch rejections surface in the left panel's +new block —
-	// these are the onspawn/onlaunch bodies, errors must propagate.
+	// Spawn/launch rejections surface in the spawn menu — these are
+	// the onspawn/onlaunch bodies, errors must propagate.
 	function onspawn(shell?: string) {
 		return spawn(shell);
 	}
@@ -678,11 +688,18 @@
 					>
 				</div>
 			{/each}
-			<button class="tb add" aria-label="new session" onclick={openNew}>+</button>
-			<button class="tb" aria-label="commands" title="commands (⌘K)" onclick={toggleCommands}>⌘</button>
 		</div>
+		<!-- the strip scrolls; spawn/commands/panel toggles stay pinned -->
+		<button class="tb add" aria-label="new session" onclick={toggleNewMenu}>+</button>
+		<button class="tb" aria-label="commands" title="commands (⌘K)" onclick={toggleCommands}>⌘</button>
 		<button class="tb" aria-label="info panel" onclick={() => togglePanel('right')}>◧</button>
 	</header>
+
+	<!-- topbar + spawn menu — shells then launch profiles; manage
+	     profiles… opens the left panel's profiles view. -->
+	{#if newOpen}
+		<NewMenu {onspawn} {onlaunch} onmanage={manageProfiles} onclose={() => (newOpen = false)} />
+	{/if}
 
 	<!-- overlay-mode scrim — docked panels never need one; drawers get
 	     a tap-outside dismiss under the same z-order the panels use. -->
@@ -694,21 +711,27 @@
 	<!-- body row: left panel | grab | terminal grid | grab | right panel.
 	     Docked ≥900px (in-flow, grid shrinks); overlay drawers below. -->
 	<div class="body">
+		<!-- The aside is always mounted: its .phead is the panel's chrome —
+		     open it's the title row (future home of the panel menu/tabs);
+		     closed it IS the expand rail. Overlays hide when closed. -->
+		<aside
+			class="panel left"
+			class:closed={!$panels.left.open}
+			style:width={wide && $panels.left.open ? `${$panels.left.w}px` : undefined}
+		>
+			<div class="phead">
+				<button
+					class="phbtn"
+					aria-label={$panels.left.open ? 'collapse panel' : 'expand panel'}
+					onclick={() => togglePanel('left')}>{$panels.left.open ? '‹' : '›'}</button
+				>
+				<span class="phtitle">{$leftView === 'profiles' ? 'profiles' : 'sessions'}</span>
+			</div>
+			{#if $panels.left.open}
+				<LeftPanel {now} {onopen} {onlaunch} {onend} {onpurge} {onclearfin} {onpreset} />
+			{/if}
+		</aside>
 		{#if $panels.left.open}
-			<aside class="panel left" style:width={wide ? `${$panels.left.w}px` : undefined}>
-				<LeftPanel
-					{now}
-					{onopen}
-					{onspawn}
-					{onlaunch}
-					{onend}
-					{onpurge}
-					{onclearfin}
-					{onpreset}
-					onrow={closeLeftOverlay}
-					bind:newopen={lpNew}
-				/>
-			</aside>
 			<!-- svelte-ignore a11y_no_static_element_interactions — splitter -->
 			<div class="grab" role="separator" onpointerdown={(e) => panelDrag(e, 'left')}></div>
 		{/if}
@@ -819,7 +842,7 @@
 		{/each}
 		{#if $panes.length === 0}
 			<div class="empty-main">
-				<button class="bigspawn" onclick={openNew}>open a session</button>
+				<button class="bigspawn" onclick={toggleNewMenu}>open a session</button>
 				{#if bootErr}<div class="sperr">{bootErr}</div>{/if}
 			</div>
 		{/if}
@@ -828,10 +851,24 @@
 		{#if $panels.right.open}
 			<!-- svelte-ignore a11y_no_static_element_interactions — splitter -->
 			<div class="grab" role="separator" onpointerdown={(e) => panelDrag(e, 'right')}></div>
-			<aside class="panel right" style:width={wide ? `${$panels.right.w}px` : undefined}>
-				<RightPanel sessionId={activeSessionId} onclose={closeRight} />
-			</aside>
 		{/if}
+		<aside
+			class="panel right"
+			class:closed={!$panels.right.open}
+			style:width={wide && $panels.right.open ? `${$panels.right.w}px` : undefined}
+		>
+			<div class="phead">
+				<span class="phtitle">{$rightView === 'commands' ? 'commands' : 'session'}</span>
+				<button
+					class="phbtn"
+					aria-label={$panels.right.open ? 'collapse panel' : 'expand panel'}
+					onclick={() => togglePanel('right')}>{$panels.right.open ? '›' : '‹'}</button
+				>
+			</div>
+			{#if $panels.right.open}
+				<RightPanel sessionId={activeSessionId} onclose={closeRight} />
+			{/if}
+		</aside>
 	</div>
 
 	{#if kbdOpen}
@@ -1011,12 +1048,69 @@
 		background: #0d1117;
 		overflow: hidden;
 		display: flex;
+		flex-direction: column;
 	}
 	.panel.left {
 		border-right: 1px solid #1a2334;
 	}
 	.panel.right {
 		border-left: 1px solid #1a2334;
+	}
+	/* Panel header — the collapse/expand anchor and future home of the
+	   panel's menu/tabs. Open: a slim title row. Closed: the header
+	   itself becomes the vertical rail. */
+	.phead {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px;
+		border-bottom: 1px solid #1a2334;
+		min-height: 34px;
+	}
+	.panel.right .phead {
+		justify-content: space-between;
+	}
+	.phbtn {
+		flex: 0 0 auto;
+		width: 36px;
+		height: 36px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		color: #7e92b8;
+		font: 14px/1 ui-monospace, monospace;
+		cursor: pointer;
+	}
+	.phbtn:hover,
+	.phbtn:active {
+		background: #1e2a3d;
+		color: #e6f2ff;
+	}
+	.phtitle {
+		padding: 0 4px;
+		font: 10px ui-monospace, monospace;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: #4a5568;
+		user-select: none;
+	}
+	.panel.closed {
+		width: 44px;
+	}
+	.panel.closed .phead {
+		flex-direction: column;
+		gap: 12px;
+		padding: 8px 0;
+		height: 100%;
+		border-bottom: 0;
+	}
+	.panel.closed .phtitle {
+		writing-mode: vertical-rl;
+		text-orientation: mixed;
 	}
 	.grab {
 		flex-shrink: 0;
@@ -1047,6 +1141,9 @@
 		.panel.right {
 			right: 0;
 			border-left: 1px solid #22304a;
+		}
+		.panel.closed {
+			display: none;
 		}
 		.grab {
 			display: none;

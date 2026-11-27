@@ -79,6 +79,13 @@
 	// name first, live foreground process as the fallback.
 	const ctxExe = $derived(ctx?.tool || ctx?.processes?.[0] || '');
 	const discoverTarget = $derived(q.trim() || ctxExe);
+	// Slash-command manifests (tags: [slash]) document the bound
+	// agent's in-TUI command surface — /help, /clear, … When the
+	// session is agent-bound, the empty-query list shows them instead
+	// of the generic context commands. Cheat-sheet only: a row still
+	// resolves to detail + copy; paste is the terminal's input path
+	// (ADR-007 — nothing else writes to the PTY).
+	const slashRows = $derived((ctx?.commands ?? []).filter((c) => c.tags?.includes('slash')));
 	// "discover <exe> --help" surfaces when the session's tool has no
 	// manifests, or the query names an uncurated binary.
 	const canDiscover = $derived(
@@ -94,7 +101,13 @@
 		try {
 			let r: CommandSummary[];
 			if (q.trim() === '' && ctx) {
-				r = ctx.commands.length || ctxExe ? ctx.commands : await api.commands('', sessionId, 20);
+				// Agent-bound session → the slash cheat-sheet replaces the
+				// generic context list; the rest stays a typed search away.
+				r = slashRows.length
+					? slashRows
+					: ctx.commands.length || ctxExe
+						? ctx.commands
+						: await api.commands('', sessionId, 20);
 			} else {
 				r = await api.commands(q, sessionId);
 			}
@@ -272,6 +285,9 @@
 			</div>
 		{/if}
 		<div class="plist" bind:this={listEl}>
+			{#if slashRows.length && !q.trim()}
+				<div class="cgroup">slash commands — type / in the session</div>
+			{/if}
 			{#each rows as c, i (c.id)}
 				<button class="crow" class:sel={i === sel} onpointerenter={() => (sel = i)} onclick={() => void pick(c)}>
 					<span class="cmain">
@@ -352,9 +368,16 @@
 		flex-direction: column;
 		flex: 1;
 		min-width: 0;
-		height: 100%;
+		min-height: 0;
 		background: #0d1117;
 		overflow: hidden;
+	}
+	.cgroup {
+		padding: 8px 12px 4px;
+		font: 10px ui-monospace, monospace;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: #4a5568;
 	}
 	.cctxh {
 		display: flex;

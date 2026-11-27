@@ -1,7 +1,7 @@
 <!-- Ref: .teos/plans/2026-11-26-side-panels-design.md — left rail:
      sessions nav + alerts + layout presets (sessions view) and profile
-     management (profiles view). The +new block expands inline under the
-     header — shells, then profiles with launch-variant sub-selection. -->
+     management (profiles view). Spawning lives in the topbar + menu —
+     this panel only carries "manage profiles…". -->
 <script lang="ts">
 	import { api, ApiError, type LaunchProfile, type Session } from '$lib/api';
 	import {
@@ -28,26 +28,20 @@
 
 	let {
 		onopen,
-		onspawn,
 		onlaunch,
 		onend,
 		onpurge,
 		onclearfin,
 		onpreset,
-		now,
-		onrow,
-		newopen = $bindable(false)
+		now
 	}: {
 		onopen: (s: Session) => void;
-		onspawn: (shell?: string) => Promise<void> | void;
 		onlaunch: (id: number, o?: { variant?: string; resume?: boolean }) => Promise<void> | void;
 		onend: (id: string, e: Event) => Promise<void> | void;
 		onpurge: (id: string, e: Event) => Promise<void> | void;
 		onclearfin: (e: Event) => Promise<void> | void;
 		onpreset: (shape: number[]) => void;
 		now: number;
-		onrow?: () => void; // overlay-mode row click → close panel
-		newopen?: boolean;
 	} = $props();
 
 	// Layout presets — the grid is a fixed arrangement of slots (≤4).
@@ -74,29 +68,18 @@
 	const running = $derived($orderedSessions.filter((s) => isLive(s) && !needsYou(s)));
 	const finished = $derived($orderedSessions.filter(isFinished));
 
-	// +new expanding block — expProf is the profile id whose launch
-	// variants are open; pick() runs a spawn/launch then collapses.
+	// pick() wraps a profile launch — failures surface inline under the
+	// list; spawning itself lives in the topbar + menu (NewMenu).
 	let err = $state('');
-	let expProf = $state(0);
-	const expandable = (pr: LaunchProfile) =>
-		(pr.variants?.length ?? 0) > 0 || (pr.resume_cmd?.length ?? 0) > 0;
 	const argvText = (pr: LaunchProfile) => (pr.argv ?? []).join(' ') || pr.shell;
-	function toggleNew() {
-		newopen = !newopen;
-	}
-	// +new can be opened from outside (topbar + / empty-grid button via
-	// bind:newopen) — fetch profiles on any transition to open. The
-	// profiles view needs them too — direct entry skips +new entirely.
+	// The profiles view needs the list — it's lazy (fetched on view entry).
 	$effect(() => {
-		if (newopen || $leftView === 'profiles') void refreshProfiles();
+		if ($leftView === 'profiles') void refreshProfiles();
 	});
 	async function pick(fn: () => Promise<void> | void) {
 		err = '';
 		try {
 			await fn();
-			newopen = false;
-			expProf = 0;
-			onrow?.();
 		} catch (e) {
 			err = e instanceof ApiError ? e.message : 'launch failed';
 		}
@@ -240,65 +223,8 @@
 	{:else}
 		<div class="dhead">
 			<span>sessions</span>
-			<button class="tb" onclick={toggleNew}>+ new</button>
+			<button class="tb" onclick={() => leftView.set('profiles')}>profiles</button>
 		</div>
-
-		{#if newopen}
-			<div class="newgrp">
-				<div class="ghead"><span>shell</span></div>
-				<button class="cx" onclick={() => void pick(() => onspawn('/bin/bash'))}>bash</button>
-				<button class="cx" onclick={() => void pick(() => onspawn('/bin/zsh'))}>zsh</button>
-				<button class="cx" onclick={() => void pick(() => onspawn('/bin/fish'))}>fish</button>
-				<div class="ghead"><span>agents</span></div>
-				{#each $profiles as pr (pr.id)}
-					{#if expandable(pr)}
-						<button class="cx" onclick={() => (expProf = expProf === pr.id ? 0 : pr.id)}>
-							{pr.name} <span class="marg">{argvText(pr)}</span>
-							<span class="caret">{expProf === pr.id ? '▾' : '▸'}</span>
-						</button>
-						{#if expProf === pr.id}
-							{#if (pr.argv?.length ?? 0) > 0 || !pr.shell}
-								<button class="cx sub" onclick={() => void pick(() => onlaunch(pr.id))}>
-									default <span class="marg">{argvText(pr)}</span>
-								</button>
-							{:else}
-								<button class="cx sub" onclick={() => void pick(() => onlaunch(pr.id))}>
-									shell <span class="marg">{pr.shell}</span>
-								</button>
-							{/if}
-							{#each pr.variants ?? [] as v}
-								<button
-									class="cx sub"
-									onclick={() => void pick(() => onlaunch(pr.id, { variant: v.name }))}
-								>
-									{v.name} <span class="marg">{v.argv.join(' ')}</span>
-								</button>
-							{/each}
-							{#if pr.resume_cmd?.length}
-								<button
-									class="cx sub"
-									onclick={() => void pick(() => onlaunch(pr.id, { resume: true }))}
-								>
-									↻ resume <span class="marg">{pr.resume_cmd.join(' ')}</span>
-								</button>
-							{/if}
-						{/if}
-					{:else}
-						<button class="cx" onclick={() => void pick(() => onlaunch(pr.id))}>
-							{pr.name} <span class="marg">{argvText(pr)}</span>
-						</button>
-					{/if}
-				{/each}
-				<button
-					class="cx dim"
-					onclick={() => {
-						newopen = false;
-						leftView.set('profiles');
-					}}>manage profiles…</button
-				>
-				{#if err}<div class="merr">{err}</div>{/if}
-			</div>
-		{/if}
 
 		<div class="ghead"><span>layout</span></div>
 		<div class="presets">
@@ -365,7 +291,7 @@
 		{/if}
 
 		{#if $sessions.length === 0}
-			<div class="empty">no sessions — tap + new</div>
+			<div class="empty">no sessions — tap + in the topbar</div>
 		{/if}
 	{/if}
 </div>
@@ -427,6 +353,7 @@
 	.pwrap {
 		flex: 1;
 		min-width: 0;
+		min-height: 0;
 		display: flex;
 		flex-direction: column;
 		overflow-y: auto;
@@ -471,12 +398,6 @@
 	.tb:active {
 		background: #2a3956;
 	}
-	/* +new inline expanding block */
-	.newgrp {
-		border-bottom: 1px solid #141b26;
-		padding-bottom: 6px;
-		flex-shrink: 0;
-	}
 	.cx {
 		display: block;
 		width: 100%;
@@ -496,18 +417,6 @@
 	.cx.sm {
 		flex: 0 0 auto;
 		width: 44px;
-	}
-	.cx.dim {
-		color: #5a6f92;
-	}
-	.cx.sub {
-		padding-left: 28px;
-		font-size: 13px;
-		min-height: 36px;
-	}
-	.caret {
-		float: right;
-		color: #4a5568;
 	}
 	.mrow {
 		display: flex;

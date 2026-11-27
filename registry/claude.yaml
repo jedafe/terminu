@@ -130,3 +130,309 @@ context:
   files: [CLAUDE.md, .claude]
 tags: [ai, claude, version]
 source: builtin
+---
+id: claude.slash.help
+application: claude
+name: "/help"
+description: "Show available slash commands"
+command:
+  executable: "/help"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.clear
+application: claude
+name: "/clear"
+description: "Clear the conversation"
+command:
+  executable: "/clear"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.compact
+application: claude
+name: "/compact"
+description: "Compact conversation context"
+command:
+  executable: "/compact"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.config
+application: claude
+name: "/config"
+description: "Open settings"
+command:
+  executable: "/config"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.cost
+application: claude
+name: "/cost"
+description: "Show token usage and cost"
+command:
+  executable: "/cost"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.doctor
+application: claude
+name: "/doctor"
+description: "Diagnose the installation"
+command:
+  executable: "/doctor"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.exit
+application: claude
+name: "/exit"
+description: "Exit the session"
+command:
+  executable: "/exit"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.init
+application: claude
+name: "/init"
+description: "Write a CLAUDE.md for this project"
+command:
+  executable: "/init"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.login
+application: claude
+name: "/login"
+description: "Sign in"
+command:
+  executable: "/login"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.logout
+application: claude
+name: "/logout"
+description: "Sign out"
+command:
+  executable: "/logout"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.mcp
+application: claude
+name: "/mcp"
+description: "Manage MCP servers"
+command:
+  executable: "/mcp"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.memory
+application: claude
+name: "/memory"
+description: "Edit memory files"
+command:
+  executable: "/memory"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.model
+application: claude
+name: "/model"
+description: "Switch model"
+command:
+  executable: "/model"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.permissions
+application: claude
+name: "/permissions"
+description: "Manage tool permissions"
+command:
+  executable: "/permissions"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.review
+application: claude
+name: "/review"
+description: "Review a pull request"
+command:
+  executable: "/review"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.status
+application: claude
+name: "/status"
+description: "Show session status"
+command:
+  executable: "/status"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin
+---
+id: claude.slash.vim
+application: claude
+name: "/vim"
+description: "Toggle vim mode"
+command:
+  executable: "/vim"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [claude]
+  files: []
+tags: [ai, claude, slash]
+source: builtin

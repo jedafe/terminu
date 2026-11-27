@@ -100,3 +100,237 @@ context:
   files: [.git, .aider.conf.yml]
 tags: [ai, aider, version]
 source: builtin
+---
+id: aider.slash.add
+application: aider
+name: "/add"
+description: "Add files to the chat"
+command:
+  executable: "/add"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.clear
+application: aider
+name: "/clear"
+description: "Clear chat history"
+command:
+  executable: "/clear"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.commit
+application: aider
+name: "/commit"
+description: "Commit edits"
+command:
+  executable: "/commit"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.diff
+application: aider
+name: "/diff"
+description: "Show diff of pending changes"
+command:
+  executable: "/diff"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.drop
+application: aider
+name: "/drop"
+description: "Remove files from the chat"
+command:
+  executable: "/drop"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.exit
+application: aider
+name: "/exit"
+description: "Exit aider"
+command:
+  executable: "/exit"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.help
+application: aider
+name: "/help"
+description: "Show help"
+command:
+  executable: "/help"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.ls
+application: aider
+name: "/ls"
+description: "List chat files"
+command:
+  executable: "/ls"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.map
+application: aider
+name: "/map"
+description: "Refresh the repo map"
+command:
+  executable: "/map"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.model
+application: aider
+name: "/model"
+description: "Switch model"
+command:
+  executable: "/model"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.run
+application: aider
+name: "/run"
+description: "Run a shell command"
+command:
+  executable: "/run"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.test
+application: aider
+name: "/test"
+description: "Run tests"
+command:
+  executable: "/test"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
+---
+id: aider.slash.undo
+application: aider
+name: "/undo"
+description: "Undo the last change"
+command:
+  executable: "/undo"
+  arguments: []
+execution:
+  risk: informational
+  confirmation: false
+  timeout_s: 0
+  working_dir: "{session.cwd}"
+context:
+  processes: [aider]
+  files: []
+tags: [ai, aider, slash]
+source: builtin
