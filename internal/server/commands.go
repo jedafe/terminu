@@ -5,15 +5,78 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/jedafe/terminu/internal/auth"
 	"github.com/jedafe/terminu/internal/broker"
 	"github.com/jedafe/terminu/internal/registry"
+	"github.com/jedafe/terminu/internal/session"
 )
+
+// systemPrincipal is the audit actor for daemon-initiated execution —
+// gate-driven slash probes have no HTTP request behind them.
+var systemPrincipal = &auth.Principal{Username: "system", Role: "admin"}
+
+// slashProbeInterval throttles the per-app probe exec — screen and
+// dir evidence refresh every gate cycle, a subprocess does not.
+const slashProbeInterval = 5 * time.Minute
+
+// slashDetect is the Manager's SetSlashDetect hook — gate events drive
+// it (a rendered /-menu lands here within seconds, not on the next
+// palette open). Same pipeline as the context route: screen
+// candidates ∪ command dirs ∪ the agent's own list probe →
+// DiscoverSlash's diff-gated persist. §04, observe-only (ADR-007).
+func (s *Server) slashDetect(sessionID, app, cwd string, lines []string) {
+	cmds := map[string]string{}
+	for name, desc := range registry.ParseSlashCandidates(lines) {
+		cmds[name] = desc
+	}
+	home, _ := os.UserHomeDir()
+	for _, d := range registry.SlashCommandDirs(app, home, cwd) {
+		for name, desc := range registry.ScanSlashDir(d) {
+			if _, ok := cmds[name]; !ok {
+				cmds[name] = desc
+			}
+		}
+	}
+	if pargv := registry.SlashProbeArgv(app); pargv != nil && s.probeDue(app) {
+		op := broker.Op{
+			Actor: systemPrincipal, Action: "command.slash_probe", Target: "local",
+			Argv: append([]string{app}, pargv...), Risk: broker.RiskControlled,
+		}
+		if s.br.Check(op) == nil {
+			for name, desc := range s.reg.ProbeSlash(context.Background(), app, cwd) {
+				if _, ok := cmds[name]; !ok {
+					cmds[name] = desc
+				}
+			}
+			_ = s.br.Audit(context.Background(), op, "ok")
+		}
+	}
+	if changed, err := s.reg.DiscoverSlash(context.Background(), app, cmds); err == nil && changed {
+		// The set grew/shrank — push so an open commands view
+		// refetches instead of waiting for the next client trigger.
+		s.bus.Pub(session.Event{Type: "commands.changed", SessionID: sessionID})
+	}
+}
+
+// probeDue rate-limits the agent self-list exec to once per
+// slashProbeInterval per app.
+func (s *Server) probeDue(app string) bool {
+	s.probeMu.Lock()
+	defer s.probeMu.Unlock()
+	if time.Since(s.probeAt[app]) >= slashProbeInterval {
+		s.probeAt[app] = time.Now()
+		return true
+	}
+	return false
+}
 
 // commandSummary is the palette/list row shape — full manifests only
 // come down on the detail route.

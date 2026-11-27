@@ -36,11 +36,19 @@ type Server struct {
 	mux  *http.ServeMux
 
 	throttle loginThrottle
+
+	// probeMu/probeAt throttle gate-driven agent slash probes — one
+	// list exec per app per slashProbeInterval.
+	probeMu sync.Mutex
+	probeAt map[string]time.Time
 }
 
 func New(cfg *config.Config, q *gen.Queries, a *auth.Service, b *broker.Broker, m *session.Manager, bus *session.EventBus, reg *registry.Registry) *Server {
 	s := &Server{cfg: cfg, q: q, auth: a, br: b, mgr: m, bus: bus, reg: reg, mux: http.NewServeMux(),
-		throttle: loginThrottle{fails: map[string][]time.Time{}}}
+		throttle: loginThrottle{fails: map[string][]time.Time{}}, probeAt: map[string]time.Time{}}
+	// §04: slash detection rides gate events — a rendered /-menu lands
+	// in the store without waiting for a context fetch.
+	m.SetSlashDetect(s.slashDetect)
 	s.routes()
 	return s
 }

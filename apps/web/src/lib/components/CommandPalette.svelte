@@ -12,7 +12,7 @@
 		type CommandSummary,
 		type ContextResult
 	} from '$lib/api';
-	import { agentStates, commandsTarget } from '$lib/stores';
+	import { agentStates, commandsTarget, commandsVersion } from '$lib/stores';
 
 	let {
 		sessionId = '',
@@ -81,6 +81,17 @@
 		) {
 			void loadContext(sessionId);
 		}
+	});
+	// commands.changed — gate-driven detection rewrote this session's
+	// slash set (a /-menu rendered, a skill installed): refetch so the
+	// rows update while the view is open.
+	let lastCv = -1;
+	$effect(() => {
+		if (app || !sessionId) return;
+		const v = $commandsVersion[sessionId] ?? 0;
+		if (v === lastCv) return;
+		lastCv = v;
+		if (v > 0) void loadContext(sessionId);
 	});
 
 	// The running tool a discover call should target — adapter-bound

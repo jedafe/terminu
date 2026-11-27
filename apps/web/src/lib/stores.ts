@@ -20,6 +20,10 @@ export interface AgentInfo {
 }
 export const agentStates = writable<Record<string, AgentInfo>>({});
 
+// commands.changed events bump a per-session counter — views holding
+// a context result refetch when their session's set rewrites.
+export const commandsVersion = writable<Record<string, number>>({});
+
 // §05 ack-able alert history — refreshed on `alert` events and drawer
 // opens; only unacknowledged rows surface in the UI.
 export const alerts = writable<Alert[]>([]);
@@ -552,6 +556,14 @@ export function wireEvents() {
 		if (e.type === 'alert') {
 			void refreshAlerts();
 			return; // alert frames don't change the session rows
+		}
+		if (e.type === 'commands.changed' && e.session_id) {
+			const ev = e as { session_id: string };
+			commandsVersion.update((m) => ({
+				...m,
+				[ev.session_id]: (m[ev.session_id] ?? 0) + 1
+			}));
+			return; // version bump is the whole signal
 		}
 		void refreshSessions().then(() => {
 			// Prune dead ids + re-sync ordering fields (agent.state events

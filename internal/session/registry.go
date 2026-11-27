@@ -24,7 +24,18 @@ type registry struct {
 	adapters []adapter.Adapter
 	mu       sync.Mutex
 	bound    map[string]*binding
+
+	// slash detection throttling — gate events fire per quiescence
+	// tick; detect work is a DB diff + optional subprocess, not
+	// per-tick work.
+	slashMu   sync.Mutex
+	slashAt   map[string]time.Time
+	slashBusy map[string]bool
 }
+
+// slashDetectInterval is the minimum spacing between one session's
+// gate-driven slash detects.
+const slashDetectInterval = 3 * time.Second
 
 // binding is one session's adapter slot + last emitted match. Mutated
 // only by the session's consume goroutine; Bound() reads under b.mu.
@@ -46,9 +57,11 @@ type binding struct {
 
 func newRegistry(m *Manager) *registry {
 	return &registry{
-		m:        m,
-		adapters: []adapter.Adapter{adapter.Claude(), adapter.Codex(), adapter.Gemini(), adapter.Opencode(), adapter.Devin(), adapter.Aider()},
-		bound:    map[string]*binding{},
+		m:         m,
+		adapters:  []adapter.Adapter{adapter.Claude(), adapter.Codex(), adapter.Gemini(), adapter.Opencode(), adapter.Devin(), adapter.Aider()},
+		bound:     map[string]*binding{},
+		slashAt:   map[string]time.Time{},
+		slashBusy: map[string]bool{},
 	}
 }
 
@@ -140,6 +153,11 @@ func (r *registry) handle(s *ptySession, e gate.Event, ctx *adapter.SessionCtx) 
 			r.m.events.Pub(ev)
 		})
 	}
+
+	// Slash detection rides the gate (§04): a rendered /-menu dirties
+	// the screen, quiescence fires, and the new surface reaches the
+	// store without a client fetch. Cooldown'd per session.
+	r.maybeSlashDetect(s, ad, fg)
 
 	var m *adapter.StateMatch
 	if ad != nil {
@@ -319,6 +337,44 @@ func (r *registry) Bound(id string) (tool string, adapted bool) {
 		return b.ad.Pin().Tool, true
 	}
 	return "", false
+}
+
+// maybeSlashDetect hands one detection cycle to the server-installed
+// hook — async (a probe may fork), dedup'd (one in flight), and at
+// most once per slashDetectInterval per session. The app key prefers
+// the bound tool — same rule as the context route.
+func (r *registry) maybeSlashDetect(s *ptySession, ad adapter.Adapter, fg proc.Info) {
+	if r.m.slashDetect == nil || fg.PID == 0 {
+		return
+	}
+	app := fg.Name()
+	if ad != nil {
+		if t := ad.Pin().Tool; t != "" {
+			app = t
+		}
+	}
+	if app == "" {
+		return
+	}
+	now := time.Now()
+	r.slashMu.Lock()
+	if r.slashBusy[s.rec.ID] || now.Sub(r.slashAt[s.rec.ID]) < slashDetectInterval {
+		r.slashMu.Unlock()
+		return
+	}
+	r.slashAt[s.rec.ID] = now
+	r.slashBusy[s.rec.ID] = true
+	r.slashMu.Unlock()
+	lines := screenLines(s.scr)
+	cwd := s.Rec().Cwd
+	go func() {
+		defer func() {
+			r.slashMu.Lock()
+			delete(r.slashBusy, s.rec.ID)
+			r.slashMu.Unlock()
+		}()
+		r.m.slashDetect(s.rec.ID, app, cwd, lines)
+	}()
 }
 
 // fgName is the last foreground process bound — read before unwatch on

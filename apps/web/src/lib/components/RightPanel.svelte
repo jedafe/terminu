@@ -4,7 +4,7 @@
      ADR-007. -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { agentStates, prompts, refreshSessions, rightView } from '$lib/stores';
+	import { agentStates, prompts, refreshSessions, rightView, commandsVersion } from '$lib/stores';
 	import { isLive, needsYou, toolBadge, pinUnv, label, fmtAgo, sessionOf } from '$lib/sessionfmt';
 	import { api, ApiError } from '$lib/api';
 	import CommandPalette from './CommandPalette.svelte';
@@ -30,15 +30,16 @@
 	});
 
 	// Agent-armed sessions surface their slash commands immediately —
-	// the context fetch on arm (and again when the agent binds) runs
-	// the server-side detection, and a slash-bearing result flips the
-	// panel to the commands view once per session. A manual flip back
-	// isn't overridden; non-agent sessions keep the session view.
+	// the context fetch on arm (and again when the agent binds or the
+	// server reports a set change) runs the server-side detection, and
+	// a slash-bearing result flips the panel to the commands view once
+	// per session. A manual flip back isn't overridden; non-agent
+	// sessions keep the session view.
 	let lastCtxKey = '',
 		flippedFor = '';
 	$effect(() => {
 		if (!sessionId) return;
-		const key = `${sessionId}:${agent?.tool ?? agent?.process ?? ''}`;
+		const key = `${sessionId}:${agent?.tool ?? agent?.process ?? ''}:${$commandsVersion[sessionId] ?? 0}`;
 		if (lastCtxKey === key) return;
 		lastCtxKey = key;
 		void api

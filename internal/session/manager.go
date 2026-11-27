@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/terminu/internal/db/gen"
 	"github.com/jedafe/terminu/internal/domain"
 	"github.com/jedafe/terminu/internal/proc"
+	"github.com/jedafe/terminu/internal/screen"
 	"github.com/jedafe/terminu/internal/shellenv"
 )
 
@@ -49,6 +50,12 @@ type Manager struct {
 	// env is the materialized managed shell layer — empty fields
 	// degrade those shells to plain spawns.
 	env shellenv.Env
+
+	// slashDetect, when set, runs the server-side slash-command
+	// detector for one session — installed via SetSlashDetect by the
+	// server (registry + broker live there). Invoked from gate events
+	// under a per-session cooldown.
+	slashDetect func(sessionID, app, cwd string, lines []string)
 }
 
 var ErrNotFound = errors.New("session not found")
@@ -470,18 +477,20 @@ func (m *Manager) SessionContext(id string) (procs []string, cwd, tool, pinStatu
 	return procs, cwd, tool, m.pins.Status(tool), nil
 }
 
-// ScreenText returns the session's visible screen plus the scrollback
-// tail as plain lines — the read source for observe-only detection
-// (slash-menu scraping, §04). Read-only; nothing writes to the PTY.
-func (m *Manager) ScreenText(id string) ([]string, error) {
-	s, err := m.Attach(id)
-	if err != nil {
-		return nil, err
-	}
-	scr := s.Screen()
+// SetSlashDetect installs the server's slash-command detector — the
+// gate event consumer calls it on live sessions when a plausible app
+// is foregrounded (a rendered /-menu dirties the screen → quiescence
+// fires → detection lands without a client fetch). §04, ADR-007.
+func (m *Manager) SetSlashDetect(fn func(sessionID, app, cwd string, lines []string)) {
+	m.slashDetect = fn
+}
+
+// screenLines flattens a screen — scrollback tail (capped) then
+// visible rows — the shared read for ScreenText + gate-time slash
+// detection. Read-only; nothing writes to the PTY.
+func screenLines(scr *screen.Screen) []string {
 	_, rows := scr.Size()
 	var lines []string
-	// Scrollback tail first (menu may have scrolled off), then visible.
 	const tailRows = 160
 	n := scr.ScrollbackLen()
 	if n > tailRows {
@@ -493,6 +502,19 @@ func (m *Manager) ScreenText(id string) ([]string, error) {
 	for y := 0; y < rows; y++ {
 		lines = append(lines, scr.RowText(y))
 	}
+	return lines
+}
+
+// ScreenText returns the session's visible screen plus the scrollback
+// tail as plain lines — the read source for observe-only detection
+// (slash-menu scraping, §04). Read-only; nothing writes to the PTY.
+func (m *Manager) ScreenText(id string) ([]string, error) {
+	s, err := m.Attach(id)
+	if err != nil {
+		return nil, err
+	}
+	scr := s.Screen()
+	lines := screenLines(scr)
 	return lines, nil
 }
 
