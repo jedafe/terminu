@@ -7,6 +7,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -135,6 +136,30 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 			if derr == nil && len(dms) > 0 {
 				ms = s.reg.Context(procs, cwd)
 			}
+		}
+	}
+	// Slash detection (§04): an agent-bound session's slash surface is
+	// observed — the rendered screen (an open /menu or /help listing)
+	// plus the agent's command dirs under home and the session cwd.
+	// Persisted as discovered manifests, rewritten only on a real set
+	// change; observe-only, nothing is typed into the PTY (ADR-007).
+	if tool != "" {
+		cmds := map[string]string{}
+		if lines, lerr := s.mgr.ScreenText(id); lerr == nil {
+			for name, desc := range registry.ParseSlashCandidates(lines) {
+				cmds[name] = desc
+			}
+		}
+		home, _ := os.UserHomeDir()
+		for _, d := range registry.SlashCommandDirs(tool, home, cwd) {
+			for name, desc := range registry.ScanSlashDir(d) {
+				if _, ok := cmds[name]; !ok {
+					cmds[name] = desc
+				}
+			}
+		}
+		if changed, derr := s.reg.DiscoverSlash(r.Context(), tool, cmds); derr == nil && changed {
+			ms = s.reg.Context(procs, cwd)
 		}
 	}
 	out := make([]commandSummary, 0, len(ms))

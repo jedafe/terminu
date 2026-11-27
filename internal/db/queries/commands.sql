@@ -44,6 +44,12 @@ DELETE FROM command_manifests WHERE source = ?;
 -- per application so other exes' discovered rows survive.
 DELETE FROM command_manifests WHERE source = 'discovered' AND application = ?;
 
+-- name: DeleteDiscoveredSlashManifests :exec
+-- Slash re-detection replaces only an app's *.slash.* rows - its
+-- --help-derived subs/flags are untouched by a slash set change.
+DELETE FROM command_manifests
+WHERE source = 'discovered' AND application = ? AND id LIKE ?;
+
 -- name: ListManifests :many
 SELECT * FROM command_manifests ORDER BY application, id;
 

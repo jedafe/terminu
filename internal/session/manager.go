@@ -470,6 +470,32 @@ func (m *Manager) SessionContext(id string) (procs []string, cwd, tool, pinStatu
 	return procs, cwd, tool, m.pins.Status(tool), nil
 }
 
+// ScreenText returns the session's visible screen plus the scrollback
+// tail as plain lines — the read source for observe-only detection
+// (slash-menu scraping, §04). Read-only; nothing writes to the PTY.
+func (m *Manager) ScreenText(id string) ([]string, error) {
+	s, err := m.Attach(id)
+	if err != nil {
+		return nil, err
+	}
+	scr := s.Screen()
+	_, rows := scr.Size()
+	var lines []string
+	// Scrollback tail first (menu may have scrolled off), then visible.
+	const tailRows = 160
+	n := scr.ScrollbackLen()
+	if n > tailRows {
+		n = tailRows
+	}
+	for i := scr.ScrollbackLen() - n; i < scr.ScrollbackLen(); i++ {
+		lines = append(lines, scr.ScrollbackRowText(i))
+	}
+	for y := 0; y < rows; y++ {
+		lines = append(lines, scr.RowText(y))
+	}
+	return lines, nil
+}
+
 // Agents returns live sessions in needs-you order: waiting-for-input
 // (highest confidence, then longest-waiting), then working states, then
 // done/error most-recent-first.

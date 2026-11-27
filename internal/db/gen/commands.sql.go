@@ -22,6 +22,23 @@ func (q *Queries) DeleteDiscoveredManifests(ctx context.Context, application str
 	return err
 }
 
+const deleteDiscoveredSlashManifests = `-- name: DeleteDiscoveredSlashManifests :exec
+DELETE FROM command_manifests
+WHERE source = 'discovered' AND application = ? AND id LIKE ?
+`
+
+type DeleteDiscoveredSlashManifestsParams struct {
+	Application string `json:"application"`
+	ID          string `json:"id"`
+}
+
+// Slash re-detection replaces only an app's *.slash.* rows - its
+// --help-derived subs/flags are untouched by a slash set change.
+func (q *Queries) DeleteDiscoveredSlashManifests(ctx context.Context, arg DeleteDiscoveredSlashManifestsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteDiscoveredSlashManifests, arg.Application, arg.ID)
+	return err
+}
+
 const deleteManifestsBySource = `-- name: DeleteManifestsBySource :exec
 DELETE FROM command_manifests WHERE source = ?
 `

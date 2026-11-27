@@ -87,6 +87,9 @@
 	// name first, live foreground process as the fallback.
 	const ctxExe = $derived(ctx?.tool || ctx?.processes?.[0] || '');
 	const discoverTarget = $derived(app || q.trim() || ctxExe);
+	// Apps already auto-scraped this view — prevents a discover loop on
+	// persistent failures.
+	const scrapedApps = new Set<string>();
 	// Slash-command manifests (tags: [slash]) document the bound
 	// agent's in-TUI command surface — /help, /clear, … When the
 	// session is agent-bound, the empty-query list shows them instead
@@ -113,9 +116,11 @@
 		try {
 			let r: CommandSummary[];
 			if (app) {
-				// App mode: the app's whole manifest list (server caps at
-				// 200), filtered client-side by the query.
+				// App mode: the app's CLI surface (subcommands + flags
+				// from --help). Slash manifests are session-mode only —
+				// they document the in-TUI surface, not the binary.
 				r = await api.commands('', '', 200, app);
+				r = r.filter((c) => !(c.tags ?? []).includes('slash'));
 				const needle = q.trim().toLowerCase();
 				if (needle) {
 					r = r.filter(
@@ -139,6 +144,14 @@
 			rows = r;
 			sel = 0;
 			err = '';
+			// An inspected app with no surface yet gets one automatic
+			// --help scrape — picking it in the modal IS the intent to
+			// see its commands; once per app per view so a scrape error
+			// doesn't loop.
+			if (app && !q.trim() && r.length === 0 && !scrapedApps.has(app)) {
+				scrapedApps.add(app);
+				void discover();
+			}
 		} catch {
 			if (my === seq) {
 				rows = [];

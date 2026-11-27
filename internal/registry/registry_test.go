@@ -20,7 +20,9 @@ import (
 // build-time bug, not a runtime surprise.
 func TestBuiltinSetDecodes(t *testing.T) {
 	got := loadFS(builtinreg.FS, "builtin")
-	if len(got) < 60 {
+	// The builtin set is the shell pseudo-app only — agent slash docs
+	// are screen/dir-detected at runtime, real CLIs come from --help.
+	if len(got) < 20 {
 		t.Fatalf("builtin registry thin: %d manifests", len(got))
 	}
 	for id, m := range got {
@@ -245,5 +247,136 @@ func TestDiscoverReplacesStale(t *testing.T) {
 	}
 	if _, ok := r.Get("fakecli.newsub"); !ok {
 		t.Fatal("new sub missing after re-discovery")
+	}
+}
+
+// A CLI that prints usage to stderr and exits non-zero still discovers —
+// CombinedOutput is what makes ssh/ffmpeg-style tools scrapeable.
+func TestDiscoverReadsStderrHelp(t *testing.T) {
+	ctx := context.Background()
+	bin := t.TempDir()
+	exe := filepath.Join(bin, "stderrcli")
+	body := "#!/bin/sh\nprintf 'Usage: stderrcli <command>\\n\\nCommands:\\n  go   do it\\n' >&2\nexit 1\n"
+	if err := os.WriteFile(exe, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	r := New(gen.New(d), t.TempDir())
+
+	got, err := r.Discover(ctx, "stderrcli")
+	if err != nil || len(got) != 1 || got[0].ID != "stderrcli.go" {
+		t.Fatalf("stderr scrape: %v got=%v", err, got)
+	}
+}
+
+// The help-argv chain falls through: a binary whose --help errors but
+// whose `help` subcommand emits a table still discovers.
+func TestDiscoverFallsBackToHelpSubcommand(t *testing.T) {
+	ctx := context.Background()
+	bin := t.TempDir()
+	exe := filepath.Join(bin, "subcli")
+	body := `#!/bin/sh
+if [ "$1" = "help" ]; then
+  printf 'Commands:\n  run   go\n'
+  exit 0
+fi
+echo "unknown flag" >&2
+exit 2
+`
+	if err := os.WriteFile(exe, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	r := New(gen.New(d), t.TempDir())
+
+	got, err := r.Discover(ctx, "subcli")
+	if err != nil || len(got) != 1 || got[0].ID != "subcli.run" {
+		t.Fatalf("help fallback: %v got=%v", err, got)
+	}
+}
+
+// Screen lines → slash candidates: a menu cluster extracts, stray
+// /path lines under the cluster threshold yield nothing.
+func TestParseSlashCandidates(t *testing.T) {
+	menu := []string{
+		"(japa@mail)-[~]",
+		"$ ls",
+		"  /add      add files",
+		"  /drop     drop files",
+		"  /clear    clear chat",
+		"/etc/passwd was mentioned once",
+		"  single /nope inline",
+	}
+	got := ParseSlashCandidates(menu)
+	if len(got) != 3 || got["add"] != "add files" {
+		t.Fatalf("menu = %+v", got)
+	}
+	sparse := []string{"$ cat /etc/passwd", "$ echo /tmp/x"}
+	if got := ParseSlashCandidates(sparse); got != nil {
+		t.Fatalf("stray paths should not cluster: %+v", got)
+	}
+}
+
+// Slash detection diffs: same set → no write; changed set → rewrite
+// that leaves the app's --help-derived rows alone.
+func TestDiscoverSlashDiffs(t *testing.T) {
+	ctx := context.Background()
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	r := New(gen.New(d), t.TempDir())
+
+	// A --help-derived flag row for the same app must survive slash
+	// rewrites.
+	if err := r.upsert(ctx, &Manifest{
+		ID: "mytool.flag.verbose", Application: "mytool", Name: "mytool -v, --verbose",
+		Command:   CommandSpec{Executable: "mytool", Arguments: []string{"--verbose"}},
+		Execution: ExecSpec{Risk: "controlled", Confirmation: true},
+		Source:    "discovered", Tags: []string{"mytool", "discovered", "flag"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := r.DiscoverSlash(ctx, "mytool", map[string]string{"add": "add files", "clear": ""})
+	if err != nil || !changed {
+		t.Fatalf("first write: changed=%v err=%v", changed, err)
+	}
+	if _, ok := r.Get("mytool.slash.add"); !ok {
+		t.Fatal("slash manifest missing")
+	}
+	// Same set → no rewrite.
+	if changed, _ = r.DiscoverSlash(ctx, "mytool", map[string]string{"add": "add files", "clear": ""}); changed {
+		t.Fatal("identical set should be a no-op")
+	}
+	// Shrinking set → rewrite; flag rows survive.
+	if changed, _ = r.DiscoverSlash(ctx, "mytool", map[string]string{"add": "add files"}); !changed {
+		t.Fatal("shrunken set should rewrite")
+	}
+	if _, ok := r.Get("mytool.slash.clear"); ok {
+		t.Fatal("removed command should drop")
+	}
+	if _, ok := r.Get("mytool.flag.verbose"); !ok {
+		t.Fatal("slash rewrite wiped --help rows")
+	}
+	// Empty evidence keeps the cached set.
+	if changed, _ = r.DiscoverSlash(ctx, "mytool", nil); changed {
+		t.Fatal("empty evidence must not wipe the cache")
+	}
+	if _, ok := r.Get("mytool.slash.add"); !ok {
+		t.Fatal("cache lost on empty evidence")
 	}
 }
