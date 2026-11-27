@@ -27,12 +27,10 @@ var systemPrincipal = &auth.Principal{Username: "system", Role: "admin"}
 // dir evidence refresh every gate cycle, a subprocess does not.
 const slashProbeInterval = 5 * time.Minute
 
-// slashDetect is the Manager's SetSlashDetect hook — gate events drive
-// it (a rendered /-menu lands here within seconds, not on the next
-// palette open). Same pipeline as the context route: screen
-// candidates ∪ command dirs ∪ the agent's own list probe →
-// DiscoverSlash's diff-gated persist. §04, observe-only (ADR-007).
-func (s *Server) slashDetect(sessionID, app, cwd string, lines []string) {
+// slashEvidence unions an app's slash-command sources — screen
+// candidates ∪ command/skill dirs ∪ bundled doc tables. The probe is
+// separate (it execs; the caller decides when to run it).
+func slashEvidence(app, cwd string, lines []string) map[string]string {
 	cmds := map[string]string{}
 	for name, desc := range registry.ParseSlashCandidates(lines) {
 		cmds[name] = desc
@@ -45,6 +43,24 @@ func (s *Server) slashDetect(sessionID, app, cwd string, lines []string) {
 			}
 		}
 	}
+	for _, d := range registry.SlashDocDirs(app, home) {
+		for name, desc := range registry.ScanSlashDocDir(d) {
+			if _, ok := cmds[name]; !ok {
+				cmds[name] = desc
+			}
+		}
+	}
+	return cmds
+}
+
+// slashDetect is the Manager's SetSlashDetect hook — gate events drive
+// it (a rendered /-menu lands here within seconds, not on the next
+// palette open). Same pipeline as the context route: screen
+// candidates ∪ command dirs ∪ bundled docs ∪ the agent's own list
+// probe → DiscoverSlash's diff-gated persist. §04, observe-only
+// (ADR-007).
+func (s *Server) slashDetect(sessionID, app, cwd string, lines []string) {
+	cmds := slashEvidence(app, cwd, lines)
 	if pargv := registry.SlashProbeArgv(app); pargv != nil && s.probeDue(app) {
 		op := broker.Op{
 			Actor: systemPrincipal, Action: "command.slash_probe", Target: "local",
@@ -213,20 +229,11 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 		detectApp = procs[0]
 	}
 	if detectApp != "" {
-		cmds := map[string]string{}
-		if lines, lerr := s.mgr.ScreenText(id); lerr == nil {
-			for name, desc := range registry.ParseSlashCandidates(lines) {
-				cmds[name] = desc
-			}
+		var lines []string
+		if l, lerr := s.mgr.ScreenText(id); lerr == nil {
+			lines = l
 		}
-		home, _ := os.UserHomeDir()
-		for _, d := range registry.SlashCommandDirs(detectApp, home, cwd) {
-			for name, desc := range registry.ScanSlashDir(d) {
-				if _, ok := cmds[name]; !ok {
-					cmds[name] = desc
-				}
-			}
-		}
+		cmds := slashEvidence(detectApp, cwd, lines)
 		// Probe: agents that self-report their slash surface (devin
 		// `skills list`) — the only source that covers built-ins when
 		// no skill dirs exist and no menu has rendered. Broker-gated +

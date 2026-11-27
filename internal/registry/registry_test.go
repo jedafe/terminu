@@ -377,6 +377,42 @@ func TestScanSlashDirSkills(t *testing.T) {
 	}
 }
 
+// A bundled doc's command table — `| `/name` | desc |` rows — yields
+// every token ("/exit` or `/quit`", aliases), keeps arg specs off
+// the name, and ignores prose + doc-link paths.
+func TestScanSlashDocDir(t *testing.T) {
+	root := t.TempDir()
+	doc := strings.Join([]string{
+		"# Commands",
+		"| Command | Description |",
+		"| --- | --- |",
+		"| `/help` | See all available commands |",
+		"| `/exit` or `/quit` | Exit the application |",
+		"| `/mode <name>` | Switch mode ([modes](/cli/reference/modes)) |",
+		"| `/sync` | Full docs at `/cli/reference/sync` |",
+		"| `/bypass` | Bypass mode (aliases: `/yolo`, `/dangerous`) |",
+		"",
+		"Run `/help` in a session — prose mentions don't count.",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "commands.mdx"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ScanSlashDocDir(root)
+	for _, want := range []string{"help", "exit", "quit", "mode", "bypass", "yolo", "dangerous"} {
+		if _, ok := got[want]; !ok {
+			t.Fatalf("missing %q: %+v", want, got)
+		}
+	}
+	if got["mode"] != "Switch mode (modes)" {
+		t.Fatalf("mode desc: %q", got["mode"])
+	}
+	for _, reject := range []string{"command", "cli", "reference", "or"} {
+		if _, ok := got[reject]; ok {
+			t.Fatalf("bogus token %q in set", reject)
+		}
+	}
+}
+
 // `devin skills list` rows: `/`-prefixed names are user-invocable and
 // extract with descriptions; bare model-only skills don't count.
 func TestParseSlashListOutput(t *testing.T) {

@@ -499,6 +499,85 @@ func skillMeta(path string) (name, desc string) {
 	return name, desc
 }
 
+// SlashDocDirs lists an agent's bundled doc roots whose command
+// tables enumerate built-in slash commands — the only file-backed
+// source for TUI commands that aren't skills and have no `list`
+// argv (devin's essential-commands.mdx). `current` wins; without
+// it every installed version's docs merge (names dedup anyway).
+func SlashDocDirs(app, home string) []string {
+	var roots []string
+	switch app {
+	case "devin":
+		cur := filepath.Join(home, ".local/share/devin/cli/_versions/current/share/devin/docs")
+		if _, err := os.Stat(cur); err == nil {
+			return []string{cur}
+		}
+		matches, _ := filepath.Glob(filepath.Join(home, ".local/share/devin/cli/_versions/*/share/devin/docs"))
+		roots = append(roots, matches...)
+	}
+	return roots
+}
+
+// slashDocExts are the doc file types scanned for command tables.
+var slashDocExts = map[string]bool{".md": true, ".mdx": true}
+
+// slashDocTokRe reads a backticked `/name` token inside a table cell.
+// The tail inside the backticks is kept so arg specs (` <name>`,
+// ` --all`) don't produce fake commands — and a `/`-leading tail
+// rejects doc-link paths like `/cli/reference/foo`.
+var slashDocTokRe = regexp.MustCompile(`\x60/([a-zA-Z][a-zA-Z0-9:_-]*)([^\x60]*)\x60`)
+
+// mdLinkRe strips markdown links to their label — `[text](url)` →
+// `text` — so a desc doesn't carry URL noise.
+var mdLinkRe = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+
+// ScanSlashDocDir reads markdown doc files for slash-command table
+// rows — `| `/name` | desc |`. Every `/name` token in the row maps
+// to its description, so `/exit` or `/quit` and `aliases:` mentions
+// join the set too. Non-table lines (prose) don't count.
+func ScanSlashDocDir(dir string) map[string]string {
+	out := map[string]string{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || !slashDocExts[strings.ToLower(filepath.Ext(e.Name()))] {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			t := strings.TrimSpace(line)
+			if !strings.HasPrefix(t, "|") {
+				continue
+			}
+			cells := strings.Split(t, "|")
+			if len(cells) < 3 {
+				continue
+			}
+			// Desc = the second cell (name cell is first); tokens in
+			// BOTH cells map to it — alias spellings included.
+			desc := strings.TrimSpace(mdLinkRe.ReplaceAllString(cells[2], "$1"))
+			desc = strings.ReplaceAll(desc, "`", "")
+			for _, c := range cells[1:3] {
+				for _, m := range slashDocTokRe.FindAllStringSubmatch(c, -1) {
+					name, rest := m[1], m[2]
+					if strings.HasPrefix(rest, "/") {
+						continue // a doc-link path, not a command
+					}
+					if _, seen := out[name]; !seen {
+						out[name] = desc
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
 // slashProbes are argv that make an agent binary report its own slash
 // surface — the agent's own enumeration beats filesystem conventions,
 // and covers built-in commands that have no file on disk. Only agents
