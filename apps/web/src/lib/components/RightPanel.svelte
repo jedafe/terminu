@@ -29,12 +29,12 @@
 			.catch(() => {});
 	});
 
-	// Agent-armed sessions surface their slash commands immediately —
-	// the context fetch on arm (and again when the agent binds or the
-	// server reports a set change) runs the server-side detection, and
-	// a slash-bearing result flips the panel to the commands view once
-	// per session. A manual flip back isn't overridden; non-agent
-	// sessions keep the session view.
+	// Context-matched commands surface immediately — the fetch on arm
+	// (and again on bind or a server set-change) runs the server-side
+	// detection, and a command-bearing result flips the panel to the
+	// commands view once per session. A manual flip back isn't
+	// overridden; sessions with no matched commands keep the session
+	// view. A shell's basic commands count — the panel opens on them.
 	let lastCtxKey = '',
 		flippedFor = '';
 	$effect(() => {
@@ -45,8 +45,7 @@
 		void api
 			.commandContext(sessionId)
 			.then((ctx) => {
-				const slash = (ctx?.commands ?? []).some((c) => c.tags?.includes('slash'));
-				if (slash && flippedFor !== sessionId) {
+				if ((ctx?.commands ?? []).length && flippedFor !== sessionId) {
 					flippedFor = sessionId;
 					rightView.set('commands');
 				}

@@ -50,7 +50,21 @@ func (r *Registry) Sync(ctx context.Context) error {
 	if err := r.syncSource(ctx, "custom", r.loadCustom()); err != nil {
 		return err
 	}
+	r.pruneDeniedSlash(ctx)
 	return r.resolve(ctx)
+}
+
+// pruneDeniedSlash drops discovered slash rows for processes that can
+// never carry a /-surface — a shell's screen is full of /-paths that
+// once parsed into fake command clusters. Runs at boot so rows written
+// before the deny rule existed stop matching new sessions.
+func (r *Registry) pruneDeniedSlash(ctx context.Context) {
+	for app := range slashDeny {
+		_ = r.q.DeleteDiscoveredSlashManifests(ctx, gen.DeleteDiscoveredSlashManifestsParams{
+			Application: app,
+			ID:          app + ".slash.%",
+		})
+	}
 }
 
 // syncSource upserts a source's manifests into the table and drops rows

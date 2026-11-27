@@ -349,6 +349,52 @@ func TestParseSlashCandidatesBoxed(t *testing.T) {
 	}
 }
 
+// The strict scan — unknown apps only — drops bare anchored tokens:
+// a shell's /usr/bin-style output can't cluster, a drawn menu with
+// descriptions still parses.
+func TestParseSlashCandidatesStrict(t *testing.T) {
+	paths := []string{
+		"/usr/local/share/zsh/site-functions",
+		"/usr/share/zsh/vendor-completions",
+		"/home/japa/.zsh/plugins",
+	}
+	if got := ParseSlashCandidatesStrict(paths); got != nil {
+		t.Fatalf("anchored paths must not cluster in strict mode: %+v", got)
+	}
+	menu := []string{
+		"│ /add    add files    │",
+		"│ /drop   drop files   │",
+		"│ /clear  clear chat   │",
+	}
+	got := ParseSlashCandidatesStrict(menu)
+	if len(got) != 3 || got["add"] != "add files" {
+		t.Fatalf("strict scan lost described rows: %+v", got)
+	}
+	mixed := []string{"/quit", "│ /add  add files │", "│ /drop  drop files │", "│ /x  x │"}
+	mgot := ParseSlashCandidatesStrict(mixed)
+	if _, ok := mgot["quit"]; ok {
+		t.Fatalf("bare anchored row leaked into strict scan: %+v", mgot)
+	}
+}
+
+// Denied processes (shells) are never slash surfaces; known agents
+// always are.
+func TestSlashCapabilitySets(t *testing.T) {
+	for _, sh := range []string{"zsh", "bash", "fish", "sh", "pwsh"} {
+		if !SlashDenied(sh) {
+			t.Fatalf("shell %q not denied", sh)
+		}
+	}
+	if SlashDenied("devin") || SlashDenied("claude") {
+		t.Fatal("agents must not be denied")
+	}
+	for _, a := range []string{"devin", "claude", "codex", "gemini", "opencode", "aider"} {
+		if !SlashKnownAgent(a) {
+			t.Fatalf("agent %q not in known set", a)
+		}
+	}
+}
+
 // A skill dir — subdirs each holding a SKILL.md — yields one command
 // per subdir, named by frontmatter when present.
 func TestScanSlashDirSkills(t *testing.T) {

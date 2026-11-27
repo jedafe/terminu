@@ -29,13 +29,29 @@ const slashProbeInterval = 5 * time.Minute
 
 // slashEvidence unions an app's slash-command sources — screen
 // candidates ∪ command/skill dirs ∪ bundled doc tables. The probe is
-// separate (it execs; the caller decides when to run it).
+// separate (it execs; the caller decides when to run it). Denied
+// processes (shells — their screens are /-path soup) never produce
+// evidence; unknown apps get the strict scan unless a real commands
+// dir exists.
 func slashEvidence(app, cwd string, lines []string) map[string]string {
-	cmds := map[string]string{}
-	for name, desc := range registry.ParseSlashCandidates(lines) {
-		cmds[name] = desc
+	if registry.SlashDenied(app) {
+		return nil
 	}
 	home, _ := os.UserHomeDir()
+	dirsExist := false
+	for _, d := range registry.SlashCommandDirs(app, home, cwd) {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			dirsExist = true
+		}
+	}
+	cmds := map[string]string{}
+	screen := registry.ParseSlashCandidates
+	if !registry.SlashKnownAgent(app) && !dirsExist {
+		screen = registry.ParseSlashCandidatesStrict
+	}
+	for name, desc := range screen(lines) {
+		cmds[name] = desc
+	}
 	for _, d := range registry.SlashCommandDirs(app, home, cwd) {
 		for name, desc := range registry.ScanSlashDir(d) {
 			if _, ok := cmds[name]; !ok {

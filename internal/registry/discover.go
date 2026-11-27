@@ -578,6 +578,50 @@ func ScanSlashDocDir(dir string) map[string]string {
 	return out
 }
 
+// slashDeny — processes that can never carry a /-command surface:
+// shells and file managers whose screens are full of /-paths that the
+// candidate parser would read as fake command clusters. Detection and
+// pruning both key off this set.
+var slashDeny = map[string]bool{
+	"sh": true, "bash": true, "dash": true, "ash": true, "zsh": true,
+	"fish": true, "ksh": true, "mksh": true, "tcsh": true, "csh": true,
+	"nu": true, "nushell": true, "xonsh": true, "elvish": true,
+	"pwsh": true, "powershell": true,
+}
+
+// SlashDenied reports whether an app is in the slashDeny set.
+func SlashDenied(app string) bool { return slashDeny[app] }
+
+// slashAgents — TUIs known to have a /-command surface, so screen
+// evidence is always meaningful for them. Apps outside the set are
+// detected only through existing command/skills dirs or a described
+// screen cluster — path spam can produce bare tokens, never
+// described rows.
+var slashAgents = map[string]bool{
+	"aider": true, "claude": true, "codex": true, "crush": true,
+	"devin": true, "gemini": true, "goose": true, "opencode": true,
+}
+
+// SlashKnownAgent reports whether app is a known slash-surface TUI.
+func SlashKnownAgent(app string) bool { return slashAgents[app] }
+
+// ParseSlashCandidatesStrict is ParseSlashCandidates minus the bare
+// anchored rows — only tokens carrying a real description count. For
+// unknown apps this is the safe scan: /usr/bin-style anchored paths
+// drop out, a drawn `│ /cmd  desc │` menu still parses.
+func ParseSlashCandidatesStrict(lines []string) map[string]string {
+	out := ParseSlashCandidates(lines)
+	for name, desc := range out {
+		if desc == "" {
+			delete(out, name)
+		}
+	}
+	if len(out) < slashMinCluster {
+		return nil
+	}
+	return out
+}
+
 // slashProbes are argv that make an agent binary report its own slash
 // surface — the agent's own enumeration beats filesystem conventions,
 // and covers built-in commands that have no file on disk. Only agents
