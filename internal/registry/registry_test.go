@@ -329,6 +329,54 @@ func TestParseSlashCandidates(t *testing.T) {
 	}
 }
 
+// A menu drawn mid-screen with box borders and a selector glyph still
+// parses; `ls /a /b /c` — bare mid-line tokens — never forms a menu.
+func TestParseSlashCandidatesBoxed(t *testing.T) {
+	menu := []string{
+		"❯ /quit",
+		"prompt: what's next?              │ /add    add files    │",
+		"                                  │ /drop   drop files   │",
+		"                                  │ /clear  clear chat   │",
+		"$ ls /a /b /c",
+	}
+	got := ParseSlashCandidates(menu)
+	if len(got) != 4 || got["add"] != "add files" || got["quit"] != "" {
+		t.Fatalf("boxed menu = %+v", got)
+	}
+	paths := []string{"$ ls /a /b /c", "$ cp /x /y /z"}
+	if got := ParseSlashCandidates(paths); got != nil {
+		t.Fatalf("bare path args must not cluster: %+v", got)
+	}
+}
+
+// A skill dir — subdirs each holding a SKILL.md — yields one command
+// per subdir, named by frontmatter when present.
+func TestScanSlashDirSkills(t *testing.T) {
+	root := t.TempDir()
+	for name, fm := range map[string]string{
+		"caveman":   "---\nname: caveman\ndescription: Talk like caveman\n---\nbody\n",
+		"unnamedsk": "no frontmatter here\n",
+	} {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(fm), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := ScanSlashDir(root)
+	if got["caveman"] != "Talk like caveman" {
+		t.Fatalf("frontmatter skill: %+v", got)
+	}
+	if _, ok := got["unnamedsk"]; !ok {
+		t.Fatalf("subdir-name fallback missing: %+v", got)
+	}
+	if _, ok := got["skill"]; ok {
+		t.Fatal("SKILL.md must name its parent, not itself")
+	}
+}
+
 // Slash detection diffs: same set → no write; changed set → rewrite
 // that leaves the app's --help-derived rows alone.
 func TestDiscoverSlashDiffs(t *testing.T) {

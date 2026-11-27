@@ -310,34 +310,63 @@ const slashMinCluster = 3
 // `:` for namespaced commands (normalized to `.` in the manifest id).
 var slashNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9:_-]{0,40}$`)
 
-// slashRowRe reads "  /add    add files to the chat" — optional
-// prompt/border glyph (TUI menus draw │-borders and ❯-selectors),
-// `/name`, column gap, description.
-var slashRowRe = regexp.MustCompile(`^\s{0,8}[>›·*❯│┃|┆┊]?\s*/([a-zA-Z][a-zA-Z0-9:_-]*)\s{2,}(.+)$`)
+// slashBound is the set allowed on either side of a `/name` token —
+// whitespace plus the glyphs TUI menus draw as borders and selectors.
+const slashBound = " \t│┃|┆┊>›·*❯"
 
-// slashBareRe reads a bare "/name" row — menu items with no trailing
-// description. `/$` anchoring keeps "/etc/passwd" out (the trailing
-// `/passwd` fails the match).
-var slashBareRe = regexp.MustCompile(`^\s{0,8}[>›·*❯│┃|┆┊]?\s*/([a-zA-Z][a-zA-Z0-9:_-]*)\s*$`)
+// slashAnchorRe matches a row *starting* with the command (optional
+// indent/border glyph, `/name`, optional gap + description, optional
+// trailing border). Bare `/name` tokens must anchor — a mid-line bare
+// `/x` is usually a path argument, not a menu row.
+var slashAnchorRe = regexp.MustCompile(`^\s{0,10}[>›·*❯│┃|┆┊]?\s*/([a-zA-Z][a-zA-Z0-9:_-]*)(?:\s{2,}([^│┃|┆┊]*?))?\s*[│┃|┆┊]?\s*$`)
+
+func isSlashNameChar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
+		c >= '0' && c <= '9' || c == '-' || c == '_' || c == ':'
+}
 
 // ParseSlashCandidates extracts slash commands from rendered screen
-// lines — an open `/` menu, a `/help` listing, or similar rows. Returns
-// nil under slashMinCluster distinct names (noise guard).
+// lines — an open `/` menu, a `/help` listing, or similar rows. Two
+// shapes count: anchored rows (bare or desc'd) and mid-line tokens
+// that carry a description (menus draw right of the input area). A
+// bare mid-line `/x` never counts — `ls /a /b /c` can't fake a menu.
+// Returns nil under slashMinCluster distinct names (noise guard).
 func ParseSlashCandidates(lines []string) map[string]string {
 	out := map[string]string{}
+	add := func(name, desc string) {
+		desc = strings.TrimRight(strings.TrimSpace(desc), slashBound+" ")
+		if _, seen := out[strings.ToLower(name)]; !seen {
+			out[strings.ToLower(name)] = desc
+		}
+	}
 	for _, line := range lines {
-		if m := slashRowRe.FindStringSubmatch(line); m != nil {
-			name := strings.ToLower(m[1])
-			if _, seen := out[name]; !seen {
-				out[name] = strings.TrimSpace(m[2])
-			}
+		if m := slashAnchorRe.FindStringSubmatch(line); m != nil {
+			add(m[1], m[2])
 			continue
 		}
-		if m := slashBareRe.FindStringSubmatch(line); m != nil {
-			name := strings.ToLower(m[1])
-			if _, seen := out[name]; !seen {
-				out[name] = ""
+		for i := 0; i < len(line); i++ {
+			if line[i] != '/' {
+				continue
 			}
+			if i > 0 && !strings.ContainsRune(slashBound, rune(line[i-1])) {
+				continue // x/foo — not a command token
+			}
+			j := i + 1
+			for j < len(line) && isSlashNameChar(line[j]) {
+				j++
+			}
+			name := line[i+1 : j]
+			if !slashNameRe.MatchString(name) {
+				continue
+			}
+			rest := line[j:]
+			if gap := len(rest) - len(strings.TrimLeft(rest, " \t")); gap < 2 {
+				continue // bare mid-line token — path, not a menu row
+			}
+			if strings.TrimSpace(rest) == "" {
+				continue
+			}
+			add(name, rest)
 		}
 	}
 	if len(out) < slashMinCluster {
@@ -352,8 +381,10 @@ var slashDirExts = map[string]bool{".md": true, ".toml": true, ".txt": true, ".y
 
 // SlashCommandDirs lists the dirs scanned for an agent's user-defined
 // slash commands — the agent's home config dir plus the session's
-// project-level equivalent under cwd. Missing dirs are skipped; files
-// under a `prompts`/`commands` naming convention are the usual shape.
+// project-level equivalent under cwd. `commands`/`prompts` dirs hold
+// one file per command; `skills` dirs hold one subdir per command with
+// a SKILL.md carrying its name/description frontmatter (devin, claude).
+// Missing dirs are skipped.
 func SlashCommandDirs(app, home, cwd string) []string {
 	var dirs []string
 	add := func(d string) {
@@ -361,11 +392,13 @@ func SlashCommandDirs(app, home, cwd string) []string {
 			dirs = append(dirs, d)
 		}
 	}
-	// Per-agent conventions, then a generic `.{app}/commands` catch-all.
+	// Per-agent conventions, then generic `.{app}/{commands,skills}`.
 	switch app {
 	case "claude":
 		add(filepath.Join(home, ".claude", "commands"))
+		add(filepath.Join(home, ".claude", "skills"))
 		add(filepath.Join(cwd, ".claude", "commands"))
+		add(filepath.Join(cwd, ".claude", "skills"))
 	case "gemini":
 		add(filepath.Join(home, ".gemini", "commands"))
 		add(filepath.Join(cwd, ".gemini", "commands"))
@@ -376,15 +409,23 @@ func SlashCommandDirs(app, home, cwd string) []string {
 		add(filepath.Join(home, ".config", "opencode", "command"))
 		add(filepath.Join(home, ".opencode", "command"))
 		add(filepath.Join(cwd, ".opencode", "command"))
+	case "devin":
+		add(filepath.Join(home, ".agents", "skills"))
+		add(filepath.Join(home, ".config", "devin", "skills"))
+		add(filepath.Join(cwd, ".devin", "skills"))
+		add(filepath.Join(cwd, ".agents", "skills"))
 	}
 	add(filepath.Join(home, "."+app, "commands"))
+	add(filepath.Join(home, "."+app, "skills"))
 	add(filepath.Join(cwd, "."+app, "commands"))
+	add(filepath.Join(cwd, "."+app, "skills"))
 	return dirs
 }
 
-// ScanSlashDir reads one command dir — every recognized file is a
-// command named by its basename (minus extension). Subdirectories are
-// namespaced `dir:name` like the agents themselves do it.
+// ScanSlashDir reads one command dir. Two file shapes: a recognized
+// file is a command named by its path (`dir:name` namespacing), and a
+// `SKILL.md` inside a subdir is one command — the skill's frontmatter
+// `name:`/`description:` describe it, falling back to the subdir name.
 func ScanSlashDir(dir string) map[string]string {
 	out := map[string]string{}
 	root := filepath.Clean(dir)
@@ -397,11 +438,25 @@ func ScanSlashDir(dir string) map[string]string {
 		if !slashDirExts[strings.ToLower(ext)] || strings.HasPrefix(base, ".") {
 			return nil
 		}
-		name := strings.TrimSuffix(base, ext)
-		if rel, rerr := filepath.Rel(root, p); rerr == nil {
-			if dir2 := filepath.Dir(rel); dir2 != "." {
-				name = strings.ReplaceAll(dir2, string(filepath.Separator), ":") + ":" + name
+		rel, rerr := filepath.Rel(root, p)
+		if rerr != nil {
+			return nil
+		}
+		parent := filepath.Dir(rel)
+		// SKILL.md → the subdir IS the command; frontmatter names it.
+		if strings.EqualFold(base, "SKILL.md") && parent != "." {
+			name, desc := skillMeta(p)
+			if name == "" {
+				name = strings.ReplaceAll(parent, string(filepath.Separator), ":")
 			}
+			if slashNameRe.MatchString(name) {
+				out[strings.ToLower(name)] = desc
+			}
+			return nil
+		}
+		name := strings.TrimSuffix(base, ext)
+		if parent != "." {
+			name = strings.ReplaceAll(parent, string(filepath.Separator), ":") + ":" + name
 		}
 		if slashNameRe.MatchString(name) {
 			out[strings.ToLower(name)] = "user command — " + filepath.Join(dir, base)
@@ -409,6 +464,37 @@ func ScanSlashDir(dir string) map[string]string {
 		return nil
 	})
 	return out
+}
+
+// skillMeta reads name:/description: from a SKILL.md's YAML
+// frontmatter — first --- block only, flat keys only.
+func skillMeta(path string) (name, desc string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", ""
+	}
+	text := string(data)
+	if !strings.HasPrefix(text, "---") {
+		return "", ""
+	}
+	end := strings.Index(text[3:], "\n---")
+	if end < 0 {
+		return "", ""
+	}
+	for _, line := range strings.Split(text[3:3+end], "\n") {
+		k, v, ok := strings.Cut(line, ":")
+		if !ok || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		v = strings.Trim(strings.TrimSpace(v), `"'`)
+		switch strings.TrimSpace(k) {
+		case "name":
+			name = v
+		case "description":
+			desc = v
+		}
+	}
+	return name, desc
 }
 
 // DiscoverSlash persists a detected slash-command set for an agent as
