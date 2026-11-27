@@ -114,9 +114,10 @@
 	}
 	.newmenu {
 		position: absolute;
-		/* under the topbar's pinned + button — same 57px math as .panel */
+		/* under the topbar's pinned + button — 57px down; + sits at
+		   8px pad + 44px ☰ + 6px gap = 58px from the left edge */
 		top: calc(57px + env(safe-area-inset-top, 0px));
-		right: 8px;
+		left: 58px;
 		z-index: 30;
 		width: min(320px, 88vw);
 		max-height: min(70vh, 560px);
