@@ -142,9 +142,65 @@ Available Commands:
 Flags:
   -h, --help   help
 `
-	subs := parseHelp(help)
+	subs, flags := parseHelp(help)
 	if len(subs) != 3 || subs[0].name != "serve" || subs[1].name != "status" {
 		t.Fatalf("subs = %+v", subs)
+	}
+	// The Flags table parses too — -h/--help canonicalize to --help.
+	if len(flags) != 1 || flags[0].name != "--help" || flags[0].disp != "-h, --help" {
+		t.Fatalf("flags = %+v", flags)
+	}
+}
+
+func TestParseHelpFlagsOnly(t *testing.T) {
+	// GNU-style doc — no Commands section; the flag table is the whole
+	// surface. Discovered manifests must come from the flag rows.
+	help := `Usage: ls [OPTION]... [FILE]...
+
+  -a, --all                  do not ignore entries starting with .
+  -l                         use a long listing format
+      --color=WHEN           color the output WHEN
+  -h, --human-readable       with -l, print sizes like 1K
+
+Examples stray line shouldn't parse:
+  rm -rf / very bad
+`
+	subs, flags := parseHelp(help)
+	if len(subs) != 0 {
+		t.Fatalf("subs = %+v", subs)
+	}
+	if len(flags) != 4 {
+		t.Fatalf("flags = %+v", flags)
+	}
+	if flags[0].name != "--all" || flags[0].disp != "-a, --all" {
+		t.Fatalf("all = %+v", flags[0])
+	}
+	// Single-token rows canonicalize to themselves; value placeholders
+	// (=WHEN) stay out of the display spec and the argv token.
+	if flags[1].name != "-l" || flags[2].name != "--color" {
+		t.Fatalf("canon = %+v", flags)
+	}
+}
+
+func TestDiscoverOnceCooldown(t *testing.T) {
+	ctx := context.Background()
+	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	defer func() { _ = d.Close() }()
+	r := New(gen.New(d), t.TempDir())
+
+	// A first attempt for an exe that doesn't resolve runs (ran=true),
+	// fails, and stamps the dedup map — an immediate re-try inside the
+	// cooldown window is skipped (ran=false), no audit row.
+	_, ran, _ := r.DiscoverOnce(ctx, "no-such-binary-xyz")
+	if !ran {
+		t.Fatal("first attempt should run")
+	}
+	_, ran, _ = r.DiscoverOnce(ctx, "no-such-binary-xyz")
+	if ran {
+		t.Fatal("retry inside cooldown should be skipped")
 	}
 }
 

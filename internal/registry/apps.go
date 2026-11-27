@@ -17,6 +17,16 @@ import (
 // constant as discoveryTimeout: a tune, not deployment config.
 const appsScanInterval = 10 * time.Minute
 
+// extraBinDirs are the usual per-user install spots outside $PATH —
+// ~/ expands against the service user's home. Per-user toolchains
+// (cargo, go, bun, nix profiles) install here.
+var extraBinDirs = []string{
+	"~/.local/bin", "~/bin", "~/go/bin", "~/.cargo/bin",
+	"~/.bun/bin", "~/.deno/bin", "~/.npm-global/bin",
+	"~/.nix-profile/bin", "/nix/var/nix/profiles/default/bin",
+	"/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin",
+}
+
 // AppEntry is one row of the apps inventory. Path is the first $PATH
 // dir that provides the binary (empty for registry-only applications);
 // Sources are the manifest sources backing it — empty Sources with
@@ -45,14 +55,38 @@ func (r *Registry) ScanLoop(ctx context.Context) {
 	}
 }
 
-// RefreshApps rebuilds the inventory: $PATH executables + every
-// application the registry knows. Cheap — one readdir per PATH dir.
+// RefreshApps rebuilds the inventory: executables on $PATH + the
+// well-known per-user dirs, merged with every application the registry
+// knows. Cheap — one readdir per dir.
 func (r *Registry) RefreshApps() {
-	onPath := map[string]string{} // name → its dir (first wins: PATH order)
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		if dir == "" {
+	home, _ := os.UserHomeDir()
+	seenDir := map[string]bool{}
+	var dirs []string
+	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
+		if d == "" {
 			continue
 		}
+		d = filepath.Clean(d)
+		if !seenDir[d] {
+			seenDir[d] = true
+			dirs = append(dirs, d)
+		}
+	}
+	for _, e := range extraBinDirs {
+		if strings.HasPrefix(e, "~/") {
+			if home == "" {
+				continue
+			}
+			e = filepath.Join(home, e[2:])
+		}
+		e = filepath.Clean(e)
+		if !seenDir[e] {
+			seenDir[e] = true
+			dirs = append(dirs, e)
+		}
+	}
+	onPath := map[string]string{} // name → its dir (first wins: PATH order)
+	for _, dir := range dirs {
 		ents, err := os.ReadDir(dir)
 		if err != nil {
 			continue // a dead dir (unmounted share) can't stall the scan
@@ -65,8 +99,10 @@ func (r *Registry) RefreshApps() {
 			if _, seen := onPath[name]; seen {
 				continue
 			}
-			fi, err := e.Info()
-			if err != nil || fi.Mode()&0o111 == 0 {
+			// os.Stat follows symlinks — a /usr/bin symlink to a
+			// real binary reports the target's mode, not the link's.
+			fi, err := os.Stat(filepath.Join(dir, name))
+			if err != nil || !fi.Mode().IsRegular() || fi.Mode()&0o111 == 0 {
 				continue // regular executables only — scripts/libs skipped
 			}
 			onPath[name] = dir

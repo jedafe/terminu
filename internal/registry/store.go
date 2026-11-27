@@ -33,11 +33,11 @@ type Registry struct {
 	appsMu sync.RWMutex
 	apps   []AppEntry // PATH+registry inventory (apps.go)
 	appsAt time.Time
-	tried  map[string]struct{} // exes auto-discovery already attempted
+	tried  map[string]time.Time // exes auto-discovery attempted → when
 }
 
 func New(q *gen.Queries, dataDir string) *Registry {
-	return &Registry{q: q, dataDir: dataDir, byID: map[string]*Manifest{}, tried: map[string]struct{}{}}
+	return &Registry{q: q, dataDir: dataDir, byID: map[string]*Manifest{}, tried: map[string]time.Time{}}
 }
 
 // Sync (re)builds the table from all three sources then re-resolves the

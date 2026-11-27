@@ -2,228 +2,253 @@
 # process IS the shell (zsh/bash/fish/sh at prompt). A pseudo-app —
 # application "shell" groups them for ?application= + the apps modal.
 # Display-only (informational); execution stays typed in the terminal.
-- id: shell.cmd.ls
-  application: shell
-  name: "ls"
-  description: "List directory contents — -la for detail + dotfiles"
-  command: { executable: "ls", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.cd
-  application: shell
-  name: "cd"
-  description: "Change directory — cd - hops back, cd ~ goes home"
-  command: { executable: "cd", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.grep
-  application: shell
-  name: "grep"
-  description: "Search text — -rn for recursive, -i case-insensitive"
-  command: { executable: "grep", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.find
-  application: shell
-  name: "find"
-  description: "Find files — find . -name '*.go' -mtime -1"
-  command: { executable: "find", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.cat
-  application: shell
-  name: "cat"
-  description: "Print file contents — prefer less for long files"
-  command: { executable: "cat", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.less
-  application: shell
-  name: "less"
-  description: "Page a file — / searches, q quits"
-  command: { executable: "less", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.tail
-  application: shell
-  name: "tail"
-  description: "Last lines of a file — -f follows a live log"
-  command: { executable: "tail", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.ps
-  application: shell
-  name: "ps"
-  description: "Process list — aux for everything, --forest for trees"
-  command: { executable: "ps", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.kill
-  application: shell
-  name: "kill"
-  description: "Signal a pid — -9 is the last resort, not the first"
-  command: { executable: "kill", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.top
-  application: shell
-  name: "top"
-  description: "Live process view — htop if installed"
-  command: { executable: "top", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.df
-  application: shell
-  name: "df"
-  description: "Filesystem free space — -h for human units"
-  command: { executable: "df", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.du
-  application: shell
-  name: "du"
-  description: "Directory usage — -sh * sizes each entry"
-  command: { executable: "du", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.chmod
-  application: shell
-  name: "chmod"
-  description: "Change permissions — +x makes a script runnable"
-  command: { executable: "chmod", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.tar
-  application: shell
-  name: "tar"
-  description: "Archives — xzf extracts, czf creates (z = gzip)"
-  command: { executable: "tar", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.curl
-  application: shell
-  name: "curl"
-  description: "HTTP client — -I headers, -L redirects, -o save"
-  command: { executable: "curl", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.wget
-  application: shell
-  name: "wget"
-  description: "Download files — -O names the output"
-  command: { executable: "wget", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.ssh
-  application: shell
-  name: "ssh"
-  description: "Remote shell — -p port, -i identity key"
-  command: { executable: "ssh", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.scp
-  application: shell
-  name: "scp"
-  description: "Copy over ssh — -r for directories"
-  command: { executable: "scp", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.git
-  application: shell
-  name: "git"
-  description: "Version control — status, log --oneline, diff"
-  command: { executable: "git", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.man
-  application: shell
-  name: "man"
-  description: "Manual pages — man -k keyword searches"
-  command: { executable: "man", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.history
-  application: shell
-  name: "history"
-  description: "Command history — !n reruns line n, ctrl-r searches"
-  command: { executable: "history", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.env
-  application: shell
-  name: "env"
-  description: "Environment variables — VAR=x prefix scopes one command"
-  command: { executable: "env", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.xargs
-  application: shell
-  name: "xargs"
-  description: "Pipe to argv — find … | xargs grep, -P parallel"
-  command: { executable: "xargs", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.systemctl
-  application: shell
-  name: "systemctl"
-  description: "Service control — status, restart, --user for user units"
-  command: { executable: "systemctl", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
-- id: shell.cmd.journalctl
-  application: shell
-  name: "journalctl"
-  description: "Unit logs — -u service, -f follows, -xe the last failure"
-  command: { executable: "journalctl", arguments: [] }
-  execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
-  context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
-  tags: [os, shell]
-  source: builtin
+
+id: shell.cmd.ls
+application: shell
+name: "ls"
+description: "List directory contents — -la for detail + dotfiles"
+command: { executable: "ls", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.cd
+application: shell
+name: "cd"
+description: "Change directory — cd - hops back, cd ~ goes home"
+command: { executable: "cd", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.grep
+application: shell
+name: "grep"
+description: "Search text — -rn for recursive, -i case-insensitive"
+command: { executable: "grep", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.find
+application: shell
+name: "find"
+description: "Find files — find . -name '*.go' -mtime -1"
+command: { executable: "find", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.cat
+application: shell
+name: "cat"
+description: "Print file contents — prefer less for long files"
+command: { executable: "cat", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.less
+application: shell
+name: "less"
+description: "Page a file — / searches, q quits"
+command: { executable: "less", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.tail
+application: shell
+name: "tail"
+description: "Last lines of a file — -f follows a live log"
+command: { executable: "tail", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.ps
+application: shell
+name: "ps"
+description: "Process list — aux for everything, --forest for trees"
+command: { executable: "ps", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.kill
+application: shell
+name: "kill"
+description: "Signal a pid — -9 is the last resort, not the first"
+command: { executable: "kill", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.top
+application: shell
+name: "top"
+description: "Live process view — htop if installed"
+command: { executable: "top", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.df
+application: shell
+name: "df"
+description: "Filesystem free space — -h for human units"
+command: { executable: "df", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.du
+application: shell
+name: "du"
+description: "Directory usage — -sh * sizes each entry"
+command: { executable: "du", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.chmod
+application: shell
+name: "chmod"
+description: "Change permissions — +x makes a script runnable"
+command: { executable: "chmod", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.tar
+application: shell
+name: "tar"
+description: "Archives — xzf extracts, czf creates (z = gzip)"
+command: { executable: "tar", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.curl
+application: shell
+name: "curl"
+description: "HTTP client — -I headers, -L redirects, -o save"
+command: { executable: "curl", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.wget
+application: shell
+name: "wget"
+description: "Download files — -O names the output"
+command: { executable: "wget", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.ssh
+application: shell
+name: "ssh"
+description: "Remote shell — -p port, -i identity key"
+command: { executable: "ssh", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.scp
+application: shell
+name: "scp"
+description: "Copy over ssh — -r for directories"
+command: { executable: "scp", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.git
+application: shell
+name: "git"
+description: "Version control — status, log --oneline, diff"
+command: { executable: "git", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.man
+application: shell
+name: "man"
+description: "Manual pages — man -k keyword searches"
+command: { executable: "man", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.history
+application: shell
+name: "history"
+description: "Command history — !n reruns line n, ctrl-r searches"
+command: { executable: "history", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.env
+application: shell
+name: "env"
+description: "Environment variables — VAR=x prefix scopes one command"
+command: { executable: "env", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.xargs
+application: shell
+name: "xargs"
+description: "Pipe to argv — find … | xargs grep, -P parallel"
+command: { executable: "xargs", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.systemctl
+application: shell
+name: "systemctl"
+description: "Service control — status, restart, --user for user units"
+command: { executable: "systemctl", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
+---
+id: shell.cmd.journalctl
+application: shell
+name: "journalctl"
+description: "Unit logs — -u service, -f follows, -xe the last failure"
+command: { executable: "journalctl", arguments: [] }
+execution: { risk: informational, confirmation: false, timeout_s: 0, working_dir: "{session.cwd}" }
+context: { processes: [zsh, bash, fish, sh, dash, ksh], files: [] }
+tags: [os, shell]
+source: builtin
