@@ -72,6 +72,10 @@ func run() error {
 	if err := reg.Sync(ctx); err != nil {
 		return fmt.Errorf("registry sync: %w", err)
 	}
+	// §04: the installed-CLI inventory scans $PATH at boot, then
+	// refreshes periodically so new installs surface unprompted.
+	reg.RefreshApps()
+	go reg.ScanLoop(ctx)
 	// §06: declared adapter pins persist; the fixture suite replays at
 	// boot so /api/adapters/{tool} reads a current pass/fail record.
 	if err := mgr.SyncPins(ctx); err != nil {

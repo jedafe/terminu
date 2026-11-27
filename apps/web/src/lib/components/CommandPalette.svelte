@@ -12,7 +12,7 @@
 		type CommandSummary,
 		type ContextResult
 	} from '$lib/api';
-	import { agentStates } from '$lib/stores';
+	import { agentStates, commandsTarget } from '$lib/stores';
 
 	let {
 		sessionId = '',
@@ -21,6 +21,11 @@
 		sessionId?: string;
 		onclose?: () => void;
 	} = $props();
+
+	// App mode — an apps-modal pick replaces the session cheat-sheet
+	// with one application's manifest list; ‹ session returns to the
+	// armed session's live context.
+	const app = $derived($commandsTarget === 'session' ? '' : $commandsTarget);
 
 	type Phase = 'search' | 'detail';
 	let phase = $state<Phase>('search');
@@ -54,6 +59,7 @@
 		}
 	}
 	$effect(() => {
+		if (app) return; // app mode carries no session context
 		if (sessionId !== lastCtx) {
 			lastCtx = sessionId;
 			void loadContext(sessionId);
@@ -61,7 +67,9 @@
 	});
 	// Live rebinding — a tool or fg proc launched while the view is
 	// open refetches ctx, so the header never shows a stale binding.
+	// Skipped in app mode (ctx is parked).
 	$effect(() => {
+		if (app) return;
 		const a = sessionId ? $agentStates[sessionId] : undefined;
 		const liveTool = a?.tool ?? '';
 		const liveProc = a?.process ?? '';
@@ -78,18 +86,22 @@
 	// The running tool a discover call should target — adapter-bound
 	// name first, live foreground process as the fallback.
 	const ctxExe = $derived(ctx?.tool || ctx?.processes?.[0] || '');
-	const discoverTarget = $derived(q.trim() || ctxExe);
+	const discoverTarget = $derived(app || q.trim() || ctxExe);
 	// Slash-command manifests (tags: [slash]) document the bound
 	// agent's in-TUI command surface — /help, /clear, … When the
 	// session is agent-bound, the empty-query list shows them instead
 	// of the generic context commands. Cheat-sheet only: a row still
 	// resolves to detail + copy; paste is the terminal's input path
 	// (ADR-007 — nothing else writes to the PTY).
-	const slashRows = $derived((ctx?.commands ?? []).filter((c) => c.tags?.includes('slash')));
+	const slashRows = $derived(
+		app ? [] : (ctx?.commands ?? []).filter((c) => c.tags?.includes('slash'))
+	);
 	// "discover <exe> --help" surfaces when the session's tool has no
-	// manifests, or the query names an uncurated binary.
+	// manifests, when an inspected app has none, or the query names an
+	// uncurated binary.
 	const canDiscover = $derived(
-		(ctxExe !== '' && (ctx?.commands?.length ?? 0) === 0 && q.trim() === '') ||
+		(app !== '' && rows.length === 0) ||
+			(ctxExe !== '' && (ctx?.commands?.length ?? 0) === 0 && q.trim() === '') ||
 			(/^[a-z0-9][a-z0-9_.-]*$/.test(q) && !rows.some((r) => r.application === q))
 	);
 
@@ -100,7 +112,19 @@
 		const my = ++seq;
 		try {
 			let r: CommandSummary[];
-			if (q.trim() === '' && ctx) {
+			if (app) {
+				// App mode: the app's whole manifest list (server caps at
+				// 200), filtered client-side by the query.
+				r = await api.commands('', '', 200, app);
+				const needle = q.trim().toLowerCase();
+				if (needle) {
+					r = r.filter(
+						(c) =>
+							c.name.toLowerCase().includes(needle) ||
+							(c.description ?? '').toLowerCase().includes(needle)
+					);
+				}
+			} else if (q.trim() === '' && ctx) {
 				// Agent-bound session → the slash cheat-sheet replaces the
 				// generic context list; the rest stays a typed search away.
 				r = slashRows.length
@@ -125,6 +149,18 @@
 	// ctx arriving async re-runs search so the fallback path applies too.
 	$effect(() => {
 		if (ctx && q.trim() === '') void search();
+	});
+	// Switching inspected app (or back to session) repopulates the list.
+	// Returning to session mode re-binds ctx — it may have gone stale
+	// while app mode parked the watcher.
+	let prevApp = '';
+	$effect(() => {
+		const cur = app;
+		manifest = null;
+		phase = 'search';
+		if (prevApp !== '' && cur === '' && sessionId) void loadContext(sessionId);
+		prevApp = cur;
+		void search();
 	});
 	function onQ() {
 		if (debounce) clearTimeout(debounce);
@@ -229,8 +265,9 @@
 	}
 
 	// "discover <exe>" — scrapes --help into provisional manifests
-	// (broker-gated controlled op, §04 auto-discovery). Targets the
-	// session's running tool when the query box is empty.
+	// (broker-gated controlled op, §04 auto-discovery). In app mode the
+	// inspected app is the target; in session mode the running tool
+	// when the query box is empty.
 	async function discover() {
 		if (discBusy) return;
 		const exe = discoverTarget;
@@ -241,7 +278,7 @@
 			const found = await api.discovered(exe);
 			if (found.length === 0) err = `no subcommands found in ${exe} --help`;
 			else {
-				await loadContext(sessionId);
+				if (!app) await loadContext(sessionId);
 				await search();
 			}
 		} catch (e) {
@@ -278,14 +315,19 @@
 				oninput={onQ}
 			/>
 		</div>
-		{#if ctx}
+		{#if app}
+			<div class="cctxh">
+				<button class="cback" onclick={() => commandsTarget.set('session')}>‹ session</button>
+				<span class="cappchip">app: {app}</span>
+			</div>
+		{:else if ctx}
 			<div class="cctxh">
 				{ctx.tool || ctx.processes.join(' ') || 'shell'}{ctx.cwd ? ` · ${ctx.cwd}` : ''}
 				{#if ctx.pin_status === 'unverified'}<span class="badge unv">unverified</span>{/if}
 			</div>
 		{/if}
 		<div class="plist" bind:this={listEl}>
-			{#if slashRows.length && !q.trim()}
+			{#if slashRows.length && !q.trim() && !app}
 				<div class="cgroup">slash commands — type / in the session</div>
 			{/if}
 			{#each rows as c, i (c.id)}
@@ -378,6 +420,20 @@
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
 		color: #4a5568;
+	}
+	.cback {
+		border: 0;
+		background: none;
+		color: #7ea4d4;
+		font: 11px ui-monospace, monospace;
+		cursor: pointer;
+		padding: 0;
+	}
+	.cback:hover {
+		color: #e6f2ff;
+	}
+	.cappchip {
+		color: #9db2ce;
 	}
 	.cctxh {
 		display: flex;

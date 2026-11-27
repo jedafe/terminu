@@ -30,11 +30,12 @@
 		togglePanel,
 		setPanelWidth,
 		resetPanelWidth,
-		toggleCommands,
 		prompts,
 		wideLayout,
 		leftView,
-		rightView
+		rightView,
+		openCommands,
+		openAppCommands
 	} from '$lib/stores';
 	import { isLive, isFinished, needsYouId, pinUnv, tabLabel } from '$lib/sessionfmt';
 	import TerminalSurface from '$lib/components/TerminalSurface.svelte';
@@ -43,6 +44,7 @@
 	import LeftPanel from '$lib/components/LeftPanel.svelte';
 	import RightPanel from '$lib/components/RightPanel.svelte';
 	import NewMenu from '$lib/components/NewMenu.svelte';
+	import AppsModal from '$lib/components/AppsModal.svelte';
 
 	let surfaces: Record<string, TerminalSurface | undefined> = {};
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -349,14 +351,15 @@
 		};
 		shellEl.addEventListener('touchmove', guard, { passive: false });
 		const cleanupDnd = initDnd();
-		// ⌘K / Ctrl-K toggles the commands view in the right panel —
-		// same surface as the topbar ⌘ button.
+		// ⌘K / Ctrl-K toggles the apps modal — same surface as the
+		// topbar ⌘ button.
 		const pal = (e: KeyboardEvent) => {
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 				e.preventDefault();
-				toggleCommands();
-			} else if (e.key === 'Escape' && newOpen) {
-				newOpen = false;
+				toggleApps();
+			} else if (e.key === 'Escape') {
+				if (newOpen) newOpen = false;
+				if (appsOpen) appsOpen = false;
 			}
 		};
 		window.addEventListener('keydown', pal);
@@ -428,6 +431,17 @@
 	let newOpen = $state(false);
 	function toggleNewMenu() {
 		newOpen = !newOpen;
+	}
+	// The ⌘ surface is the apps modal — the detected-CLI inventory;
+	// picking an app binds the right panel's commands view to it.
+	let appsOpen = $state(false);
+	function toggleApps() {
+		appsOpen = !appsOpen;
+	}
+	function appsPick(target: string) {
+		appsOpen = false;
+		if (target === 'session') openCommands();
+		else openAppCommands(target);
 	}
 	// "manage profiles…" in the menu opens the left panel on its
 	// profiles view — togglePanel carries the touched flag + the
@@ -691,9 +705,13 @@
 		</div>
 		<!-- the strip scrolls; spawn/commands/panel toggles stay pinned -->
 		<button class="tb add" aria-label="new session" onclick={toggleNewMenu}>+</button>
-		<button class="tb" aria-label="commands" title="commands (⌘K)" onclick={toggleCommands}>⌘</button>
+		<button class="tb" aria-label="applications" title="applications (⌘K)" onclick={toggleApps}>⌘</button>
 		<button class="tb" aria-label="info panel" onclick={() => togglePanel('right')}>◧</button>
 	</header>
+
+	{#if appsOpen}
+		<AppsModal onpick={appsPick} onclose={() => (appsOpen = false)} />
+	{/if}
 
 	<!-- topbar + spawn menu — shells then launch profiles; manage
 	     profiles… opens the left panel's profiles view. -->

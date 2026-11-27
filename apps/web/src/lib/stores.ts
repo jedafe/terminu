@@ -184,9 +184,26 @@ export function sanitizePanels(v: unknown): { left: PanelSide; right: PanelSide 
 // Panel views are ephemeral — never persisted.
 export const rightView = writable<'session' | 'commands'>('session');
 export const leftView = writable<'sessions' | 'profiles'>('sessions');
+// The commands view's content mode: 'session' = live-context
+// cheat-sheet for the armed session (§04); an app name = that app's
+// manifest list from the ⌘ apps modal (session-free browsing).
+export const commandsTarget = writable<string>('session');
 // ⌘K / ⌘ = "open the right panel on the commands view".
 export function openCommands() {
 	panelsTouched = true;
+	commandsTarget.set('session');
+	rightView.set('commands');
+	panels.update((p) => {
+		const next = { ...p, right: { ...p.right, open: true } };
+		if (!wideLayout()) next.left = { ...next.left, open: false };
+		return next;
+	});
+}
+// An apps-modal pick → the right panel on the commands view bound to
+// that app instead of the armed session's context.
+export function openAppCommands(app: string) {
+	panelsTouched = true;
+	commandsTarget.set(app);
 	rightView.set('commands');
 	panels.update((p) => {
 		const next = { ...p, right: { ...p.right, open: true } };

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	builtinreg "github.com/jedafe/terminu/registry"
 
@@ -28,10 +29,15 @@ type Registry struct {
 
 	mu   sync.RWMutex
 	byID map[string]*Manifest // resolved winners only
+
+	appsMu sync.RWMutex
+	apps   []AppEntry // PATH+registry inventory (apps.go)
+	appsAt time.Time
+	tried  map[string]struct{} // exes auto-discovery already attempted
 }
 
 func New(q *gen.Queries, dataDir string) *Registry {
-	return &Registry{q: q, dataDir: dataDir, byID: map[string]*Manifest{}}
+	return &Registry{q: q, dataDir: dataDir, byID: map[string]*Manifest{}, tried: map[string]struct{}{}}
 }
 
 // Sync (re)builds the table from all three sources then re-resolves the

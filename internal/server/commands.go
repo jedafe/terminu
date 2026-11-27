@@ -49,6 +49,20 @@ func (s *Server) listCommands(w http.ResponseWriter, r *http.Request) {
 	if limit > 200 {
 		limit = 200
 	}
+	// ?application= pins the list to one app — the apps modal's detail
+	// surface ("all commands for X"), still q-searchable within it.
+	if app := strings.TrimSpace(r.URL.Query().Get("application")); app != "" {
+		ms := s.reg.ForApplication(app)
+		if len(ms) > limit {
+			ms = ms[:limit]
+		}
+		out := make([]commandSummary, 0, len(ms))
+		for _, m := range ms {
+			out = append(out, summaryOf(m, false))
+		}
+		writeJSON(w, 200, out)
+		return
+	}
 	ctxIDs := map[string]bool{}
 	if sid := r.URL.Query().Get("session_id"); sid != "" {
 		if procs, cwd, _, _, err := s.mgr.SessionContext(sid); err == nil {
@@ -85,6 +99,29 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ms := s.reg.Context(procs, cwd)
+	// Auto-discovery (§04): a live foreground process with zero
+	// manifests gets one dedup'd, broker-gated --help scrape — an
+	// uncurated CLI surfaces its own commands instead of nothing.
+	if len(ms) == 0 && len(procs) > 0 && procs[0] != tool {
+		exe := procs[0]
+		op := broker.Op{
+			Actor: principal(r), Action: "command.discover", Target: "local",
+			Argv: []string{exe, "--help"}, Risk: broker.RiskControlled,
+		}
+		if s.br.Check(op) == nil {
+			dms, ran, derr := s.reg.DiscoverOnce(r.Context(), exe)
+			if ran {
+				res := "ok"
+				if derr != nil {
+					res = "error"
+				}
+				_ = s.br.Audit(r.Context(), op, res)
+			}
+			if derr == nil && len(dms) > 0 {
+				ms = s.reg.Context(procs, cwd)
+			}
+		}
+	}
 	out := make([]commandSummary, 0, len(ms))
 	for _, m := range ms {
 		out = append(out, summaryOf(m, true))
@@ -92,6 +129,16 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"session_id": id, "processes": procs, "tool": tool,
 		"pin_status": pinStatus, "cwd": cwd, "commands": out,
+	})
+}
+
+// appsInventory is GET /api/apps — the installed-CLI inventory backing
+// the ⌘ apps modal: $PATH executables merged with every application
+// the registry carries manifests for.
+func (s *Server) appsInventory(w http.ResponseWriter, r *http.Request) {
+	entries, at := s.reg.Apps()
+	writeJSON(w, 200, map[string]any{
+		"apps": entries, "count": len(entries), "scanned_at": at,
 	})
 }
 

@@ -68,6 +68,23 @@ func (r *Registry) Discover(ctx context.Context, exe string) ([]*Manifest, error
 	return out, nil
 }
 
+// DiscoverOnce is the auto-discovery path (§04): the context route
+// calls it when a session's foreground process has zero manifests —
+// one attempt per exe per process lifetime, success or failure, so a
+// binary that hangs/fails --help can't be re-scraped by every palette
+// open. ran=false means the exe was already attempted (skip audit).
+func (r *Registry) DiscoverOnce(ctx context.Context, exe string) (ms []*Manifest, ran bool, err error) {
+	r.appsMu.Lock()
+	if _, ok := r.tried[exe]; ok {
+		r.appsMu.Unlock()
+		return nil, false, nil
+	}
+	r.tried[exe] = struct{}{}
+	r.appsMu.Unlock()
+	ms, err = r.Discover(ctx, exe)
+	return ms, true, err
+}
+
 // ListDiscovered returns the registry's discovered-source rows.
 func (r *Registry) ListDiscovered() []*Manifest {
 	var out []*Manifest

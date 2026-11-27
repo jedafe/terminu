@@ -49,11 +49,15 @@ export const api = {
 	// §04 command intelligence — palette search (context-first when
 	// session_id is given) and manifest detail for the cheat-sheet
 	// (ADR-007: display only — there is no execute route).
-	commands: (q = '', sessionId = '', limit = 50) => {
+	commands: (q = '', sessionId = '', limit = 50, application = '') => {
 		const p = new URLSearchParams({ q, limit: String(limit) });
 		if (sessionId) p.set('session_id', sessionId);
+		if (application) p.set('application', application);
 		return req<CommandSummary[]>(`/api/commands?${p}`);
 	},
+	// §04 apps modal — the installed-CLI inventory (PATH ∪ registry
+	// applications); refreshed at boot + periodically server-side.
+	apps: () => req<AppsResult>('/api/apps'),
 	command: (id: string) => req<CommandManifest>(`/api/commands/${encodeURIComponent(id)}`),
 	commandContext: (id: string) =>
 		req<ContextResult>(`/api/commands/context/${id}`),
@@ -174,6 +178,20 @@ export interface CommandSummary {
 	risk: string; // informational | controlled | confirmed | restricted
 	confirmation: boolean;
 	context?: boolean;
+}
+
+// GET /api/apps — one inventory row per installed/registry application.
+export interface AppEntry {
+	name: string;
+	path?: string;
+	installed: boolean;
+	manifests: number;
+	sources?: string[];
+}
+export interface AppsResult {
+	apps: AppEntry[];
+	count: number;
+	scanned_at: string;
 }
 
 // GET /api/commands/context/{id} — the session's live tool/procs/cwd
