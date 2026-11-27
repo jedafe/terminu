@@ -1,7 +1,9 @@
 <!-- Ref: .teos/sections/04 — the ⌘ surface: a modal inventory of
      detected CLIs (running / curated / discovered / PATH) → picking
      one binds the right panel's commands view to that app. The first
-     row returns to the armed session's live context. -->
+     row returns to the armed session's live context. Distro-managed
+     binaries in system dirs flood the modal with noise — browse mode
+     collapses them behind a toggle; search still finds them. -->
 <script lang="ts">
 	import { api, type AppEntry } from '$lib/api';
 	import { agentStates } from '$lib/stores';
@@ -13,6 +15,7 @@
 	let apps = $state<AppEntry[]>([]);
 	let err = $state('');
 	let sel = $state(0);
+	let sysOpen = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
 	let listEl: HTMLDivElement | undefined = $state();
 
@@ -24,9 +27,21 @@
 			)
 		)
 	);
+	// Distro-managed dirs — a bare-PATH binary (no manifests) living in
+	// one of these is a system default, not a user-installed tool.
+	const SYS_DIRS = new Set([
+		'/bin', '/sbin', '/usr/bin', '/usr/sbin', '/lib', '/lib64',
+		'/usr/libexec', '/usr/games', '/usr/local/games', '/snap/bin',
+	]);
+	const isSys = (a: AppEntry) => (a.sources ?? []).length === 0 && SYS_DIRS.has(a.path ?? '');
 	const needle = $derived(q.trim().toLowerCase());
+	const sysCount = $derived(
+		apps.filter((a) => isSys(a) && (!needle || a.name.toLowerCase().includes(needle))).length
+	);
 	const filtered = $derived(
-		needle ? apps.filter((a) => a.name.toLowerCase().includes(needle)) : apps
+		needle
+			? apps.filter((a) => a.name.toLowerCase().includes(needle))
+			: apps.filter((a) => !isSys(a) || sysOpen)
 	);
 	// Group order: what runs now, what's curated, what was scraped,
 	// then bare PATH names. Dedup across groups — running wins.
@@ -41,7 +56,7 @@
 			take((a) => live.has(a.name), 'running'),
 			take((a) => (a.sources ?? []).some((s) => s === 'builtin' || s === 'custom'), 'curated'),
 			take((a) => (a.sources ?? []).includes('discovered'), 'discovered'),
-			take(() => true, 'on $PATH')
+			take(() => true, needle ? 'on $PATH' : 'installed')
 		].filter((g) => g.rows.length > 0);
 	});
 	// Flat list for ↑↓ navigation — group headers aren't selectable.
@@ -132,6 +147,12 @@
 				</button>
 			{/each}
 		{/each}
+		{#if !needle && !sysOpen && sysCount > 0}
+			<button class="arow asys" onclick={() => (sysOpen = true)}>
+				<span class="aname">▸ {sysCount} system {sysCount === 1 ? 'binary' : 'binaries'}</span>
+				<span class="ameta">distro defaults — show</span>
+			</button>
+		{/if}
 		{#if flat.length === 0 && !err}
 			<div class="aempty">no applications match</div>
 		{/if}
@@ -233,6 +254,9 @@
 		width: calc(100% - 8px);
 		border-bottom: 1px solid #141b26;
 		border-radius: 7px 7px 0 0;
+	}
+	.arow.asys {
+		color: #4a5568;
 	}
 	.aname {
 		overflow: hidden;

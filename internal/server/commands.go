@@ -100,9 +100,24 @@ func (s *Server) commandContext(w http.ResponseWriter, r *http.Request) {
 	}
 	ms := s.reg.Context(procs, cwd)
 	// Auto-discovery (§04): a live foreground process with zero
-	// manifests gets one dedup'd, broker-gated --help scrape — an
-	// uncurated CLI surfaces its own commands instead of nothing.
-	if len(ms) == 0 && len(procs) > 0 && procs[0] != tool {
+	// non-slash manifests gets one dedup'd, broker-gated --help scrape —
+	// an uncurated CLI surfaces its own commands instead of nothing.
+	// Slash manifests don't count as coverage: they describe the agent's
+	// in-TUI surface, not the binary's real flags.
+	cover := 0
+	for _, m := range ms {
+		slash := false
+		for _, t := range m.Tags {
+			if t == "slash" {
+				slash = true
+				break
+			}
+		}
+		if !slash {
+			cover++
+		}
+	}
+	if cover == 0 && len(procs) > 0 && procs[0] != tool {
 		exe := procs[0]
 		op := broker.Op{
 			Actor: principal(r), Action: "command.discover", Target: "local",
