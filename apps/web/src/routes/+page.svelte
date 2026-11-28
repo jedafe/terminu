@@ -921,6 +921,7 @@
 		display: flex;
 		flex-direction: column;
 		background: #0a0e14;
+		padding-bottom: 6px;
 	}
 	.ptr {
 		position: fixed;
